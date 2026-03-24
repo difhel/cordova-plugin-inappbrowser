@@ -39,22 +39,6 @@
 
 #define    IAB_BRIDGE_NAME @"cordova_iab"
 
-static CGFloat const kCollapsedBarHeight = 48.0;
-static CGFloat const kCollapsedBarMinWidth = 288.0;
-static CGFloat const kCollapsedBarMaxWidth = 360.0;
-static CGFloat const kCollapsedBarHorizontalMargin = 16.0;
-static CGFloat const kCollapsedBarBottomOffset = 72.0;
-static CGFloat const kCollapsedBarIconSize = 24.0;
-static NSTimeInterval const kCollapsedBarAnimationDuration = 0.18;
-
-@interface CDVWKInAppBrowserViewController ()
-@property (nonatomic, strong) UIImage *collapsedIconImage;
-@property (nonatomic, copy) NSString *collapsedIconURLString;
-@property (nonatomic, assign) NSUInteger collapsedIconRequestId;
-- (void)resetCollapsedIcon;
-- (void)refreshCollapsedIcon;
-@end
-
 #pragma mark CDVWKInAppBrowser
 
 @implementation CDVWKInAppBrowser
@@ -85,11 +69,6 @@ static CDVWKInAppBrowser* instance = nil;
     if (self.inAppBrowserViewController == nil) {
         NSLog(@"IAB.close() called but it was already closed.");
         return;
-    }
-
-    if (self.browserCollapsed) {
-        self.browserCollapsed = NO;
-        [self removeCollapsedBarAnimated:NO completion:nil];
     }
 
     // Things are cleaned up in browserExit.
@@ -146,7 +125,6 @@ static CDVWKInAppBrowser* instance = nil;
 {
     CDVInAppBrowserOptions* browserOptions = [CDVInAppBrowserOptions parseOptions:options];
     NSArray<CDVInAppBrowserUrlMenuItem *>* menuItems = [CDVInAppBrowserUrlMenuItem parseMenu:menu];
-    self.browserHidden = browserOptions.hidden;
 
     WKWebsiteDataStore* dataStore = [WKWebsiteDataStore defaultDataStore];
     if (browserOptions.cleardata) {
@@ -274,228 +252,19 @@ static CDVWKInAppBrowser* instance = nil;
     }
 }
 
-- (UIWindow *)currentWindow
-{
-    if (@available(iOS 13.0, *)) {
-        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
-            if (scene.activationState != UISceneActivationStateForegroundActive ||
-                ![scene isKindOfClass:[UIWindowScene class]]) {
-                continue;
-            }
-
-            for (UIWindow *window in ((UIWindowScene *)scene).windows) {
-                if (window.isKeyWindow) {
-                    return window;
-                }
-            }
-        }
-    }
-
-    return [UIApplication sharedApplication].keyWindow;
-}
-
-- (void)refreshCollapsedBar
-{
-    if (!self.browserCollapsed || self.collapsedBarView == nil || self.inAppBrowserViewController == nil) {
-        return;
-    }
-
-    NSString *title = [self.inAppBrowserViewController collapsedTitleText];
-    [self.collapsedTitleButton setTitle:title forState:UIControlStateNormal];
-
-    UIColor *labelColor = [UIColor labelColor];
-    UIColor *secondaryColor = [UIColor secondaryLabelColor];
-    UIImage *iconImage = self.inAppBrowserViewController.collapsedIconImage;
-    if (iconImage == nil) {
-        UIImageSymbolConfiguration *symbolConfig = [UIImageSymbolConfiguration configurationWithPointSize:18 weight:UIImageSymbolWeightSemibold];
-        iconImage = [[UIImage systemImageNamed:@"globe"] imageByApplyingSymbolConfiguration:symbolConfig];
-        iconImage = [iconImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-    } else {
-        iconImage = [iconImage imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
-    }
-
-    self.collapsedBarView.backgroundColor = [UIColor secondarySystemBackgroundColor];
-    [self.collapsedTitleButton setTitleColor:labelColor forState:UIControlStateNormal];
-    [self.collapsedTitleButton setImage:iconImage forState:UIControlStateNormal];
-    self.collapsedTitleButton.tintColor = secondaryColor;
-    self.collapsedTitleButton.imageView.layer.cornerRadius = 8;
-    self.collapsedTitleButton.imageView.clipsToBounds = YES;
-    self.collapsedTitleButton.imageView.contentMode = UIViewContentModeScaleAspectFill;
-    self.collapsedCloseButton.tintColor = secondaryColor;
-    self.collapsedExpandButton.tintColor = secondaryColor;
-}
-
-- (void)removeCollapsedBarAnimated:(BOOL)animated completion:(void (^)(void))completion
-{
-    if (self.collapsedBarView == nil) {
-        if (completion != nil) {
-            completion();
-        }
-        return;
-    }
-
-    UIView *collapsedBar = self.collapsedBarView;
-    void (^cleanup)(void) = ^{
-        [collapsedBar removeFromSuperview];
-        self.collapsedBarView = nil;
-        self.collapsedTitleButton = nil;
-        self.collapsedCloseButton = nil;
-        self.collapsedExpandButton = nil;
-        if (completion != nil) {
-            completion();
-        }
-    };
-
-    if (!animated) {
-        cleanup();
-        return;
-    }
-
-    [UIView animateWithDuration:kCollapsedBarAnimationDuration animations:^{
-        collapsedBar.alpha = 0;
-        collapsedBar.transform = CGAffineTransformMakeTranslation(0, 12);
-    } completion:^(__unused BOOL finished) {
-        cleanup();
-    }];
-}
-
-- (void)showCollapsedBarAnimated:(BOOL)animated
-{
-    UIWindow *window = [self currentWindow];
-    if (window == nil || self.inAppBrowserViewController == nil) {
-        return;
-    }
-
-    if (self.collapsedBarView == nil) {
-        UIView *barView = [[UIView alloc] init];
-        barView.translatesAutoresizingMaskIntoConstraints = NO;
-        barView.layer.cornerRadius = kCollapsedBarHeight / 2.0;
-        barView.layer.shadowColor = [UIColor colorWithWhite:0 alpha:0.18].CGColor;
-        barView.layer.shadowOffset = CGSizeMake(0, 8);
-        barView.layer.shadowRadius = 18;
-        barView.layer.shadowOpacity = 1;
-
-        UIButton *closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
-        closeButton.translatesAutoresizingMaskIntoConstraints = NO;
-        [closeButton setImage:[UIImage systemImageNamed:@"xmark"] forState:UIControlStateNormal];
-        [closeButton addTarget:self action:@selector(close:) forControlEvents:UIControlEventTouchUpInside];
-
-        UIButton *titleButton = [UIButton buttonWithType:UIButtonTypeSystem];
-        titleButton.translatesAutoresizingMaskIntoConstraints = NO;
-        titleButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-        titleButton.titleLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
-        titleButton.titleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
-        titleButton.semanticContentAttribute = UISemanticContentAttributeForceLeftToRight;
-        titleButton.contentEdgeInsets = UIEdgeInsetsMake(0, 0, 0, 0);
-        titleButton.titleEdgeInsets = UIEdgeInsetsMake(0, 8, 0, 0);
-        [titleButton addTarget:self action:@selector(expandCollapsedBrowser) forControlEvents:UIControlEventTouchUpInside];
-        titleButton.imageView.layer.cornerRadius = 8;
-        titleButton.imageView.clipsToBounds = YES;
-        titleButton.imageView.contentMode = UIViewContentModeScaleAspectFill;
-        [titleButton setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
-        [titleButton setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
-
-        UIButton *expandButton = [UIButton buttonWithType:UIButtonTypeSystem];
-        expandButton.translatesAutoresizingMaskIntoConstraints = NO;
-        [expandButton setImage:[UIImage systemImageNamed:@"chevron.up"] forState:UIControlStateNormal];
-        [expandButton addTarget:self action:@selector(expandCollapsedBrowser) forControlEvents:UIControlEventTouchUpInside];
-
-        UIStackView *stackView = [[UIStackView alloc] initWithArrangedSubviews:@[closeButton, titleButton, expandButton]];
-        stackView.translatesAutoresizingMaskIntoConstraints = NO;
-        stackView.axis = UILayoutConstraintAxisHorizontal;
-        stackView.alignment = UIStackViewAlignmentCenter;
-        stackView.spacing = 4;
-        [barView addSubview:stackView];
-
-        [window addSubview:barView];
-        [NSLayoutConstraint activateConstraints:@[
-            [barView.heightAnchor constraintEqualToConstant:kCollapsedBarHeight],
-            [barView.widthAnchor constraintGreaterThanOrEqualToConstant:kCollapsedBarMinWidth],
-            [barView.widthAnchor constraintLessThanOrEqualToConstant:kCollapsedBarMaxWidth],
-            [barView.leadingAnchor constraintGreaterThanOrEqualToAnchor:window.safeAreaLayoutGuide.leadingAnchor constant:kCollapsedBarHorizontalMargin],
-            [barView.trailingAnchor constraintLessThanOrEqualToAnchor:window.safeAreaLayoutGuide.trailingAnchor constant:-kCollapsedBarHorizontalMargin],
-            [barView.centerXAnchor constraintEqualToAnchor:window.centerXAnchor],
-            [barView.bottomAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.bottomAnchor constant:-kCollapsedBarBottomOffset],
-
-            [stackView.topAnchor constraintEqualToAnchor:barView.topAnchor constant:4],
-            [stackView.bottomAnchor constraintEqualToAnchor:barView.bottomAnchor constant:-4],
-            [stackView.leadingAnchor constraintEqualToAnchor:barView.leadingAnchor constant:4],
-            [stackView.trailingAnchor constraintEqualToAnchor:barView.trailingAnchor constant:-4],
-
-            [closeButton.widthAnchor constraintEqualToConstant:40],
-            [closeButton.heightAnchor constraintEqualToConstant:40],
-            [titleButton.heightAnchor constraintEqualToConstant:40],
-            [expandButton.widthAnchor constraintEqualToConstant:40],
-            [expandButton.heightAnchor constraintEqualToConstant:40]
-        ]];
-
-        self.collapsedBarView = barView;
-        self.collapsedTitleButton = titleButton;
-        self.collapsedCloseButton = closeButton;
-        self.collapsedExpandButton = expandButton;
-        [self refreshCollapsedBar];
-    }
-
-    self.collapsedBarView.alpha = animated ? 0 : 1;
-    self.collapsedBarView.transform = animated ? CGAffineTransformMakeTranslation(0, 12) : CGAffineTransformIdentity;
-
-    if (animated) {
-        [UIView animateWithDuration:kCollapsedBarAnimationDuration animations:^{
-            self.collapsedBarView.alpha = 1;
-            self.collapsedBarView.transform = CGAffineTransformIdentity;
-        }];
-    }
-}
-
-- (void)collapse
-{
-    if (self.inAppBrowserViewController == nil || self.browserCollapsed || self.browserHidden) {
-        return;
-    }
-
-    UIViewController *presentingViewController = self.inAppBrowserNav.presentingViewController ?: self.inAppBrowserViewController.navigationController.presentingViewController;
-    self.browserCollapsed = YES;
-    [self refreshCollapsedBar];
-
-    if (presentingViewController == nil) {
-        [self showCollapsedBarAnimated:YES];
-        return;
-    }
-
-    __weak typeof(self) weakSelf = self;
-    [presentingViewController dismissViewControllerAnimated:YES completion:^{
-        [weakSelf showCollapsedBarAnimated:YES];
-    }];
-}
-
-- (void)expandCollapsedBrowser
-{
-    if (!self.browserCollapsed || self.inAppBrowserViewController == nil) {
-        return;
-    }
-
-    self.browserCollapsed = NO;
-    __weak typeof(self) weakSelf = self;
-    [self removeCollapsedBarAnimated:YES completion:^{
-        [weakSelf show:nil withNoAnimate:NO];
-    }];
-}
-
 - (void)show:(CDVInvokedUrlCommand*)command{
     [self show:command withNoAnimate:NO];
 }
 
 - (void)show:(CDVInvokedUrlCommand*)command withNoAnimate:(BOOL)noAnimate
 {
-    if (self.inAppBrowserViewController == nil) {
-        return;
+    BOOL initHidden = NO;
+    if(command == nil && noAnimate == YES){
+        initHidden = YES;
     }
 
-    if (self.browserCollapsed) {
-        if (self.browserHidden) {
-            self.browserHidden = NO;
-            [self showCollapsedBarAnimated:!noAnimate];
-        }
+    if (self.inAppBrowserViewController == nil) {
+        NSLog(@"Tried to show IAB after it was closed.");
         return;
     }
 
@@ -511,6 +280,7 @@ static CDVWKInAppBrowser* instance = nil;
         _inAppBrowserNav.presentationController.delegate = self.inAppBrowserViewController;
         if (@available(iOS 15.0, *)) {
             _inAppBrowserNav.sheetPresentationController.detents = @[
+                [UISheetPresentationControllerDetent mediumDetent],
                 [UISheetPresentationControllerDetent largeDetent]
             ];
             [_inAppBrowserNav.sheetPresentationController setSelectedDetentIdentifier:UISheetPresentationControllerDetentIdentifierLarge];
@@ -526,23 +296,13 @@ static CDVWKInAppBrowser* instance = nil;
         _inAppBrowserNav.sheetPresentationController.delegate = self.inAppBrowserViewController;
     }
 
-    BOOL isBrowserPresented = self.inAppBrowserNav.presentingViewController != nil
-        || self.inAppBrowserViewController.presentingViewController != nil
-        || self.inAppBrowserViewController.navigationController.presentingViewController != nil;
-    if (!self.browserHidden && isBrowserPresented) {
-        return;
-    }
-
-    self.browserHidden = NO;
     __weak CDVWKInAppBrowser* weakSelf = self;
 
     // Run later to avoid the "took a long time" log message.
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (weakSelf.inAppBrowserNav != nil && !weakSelf.browserHidden && !weakSelf.browserCollapsed) {
+        if (weakSelf.inAppBrowserNav != nil) {
             UIViewController *topVC = [self topViewController];
-            if (weakSelf.inAppBrowserNav.presentingViewController == nil
-                && topVC != self.inAppBrowserViewController
-                && topVC != self.inAppBrowserNav) { // ignore multiple show calls from js side
+            if (topVC != self.inAppBrowserViewController) { // ignore multiple show calls from js side
                 [topVC presentViewController:self.inAppBrowserNav animated:!noAnimate completion:^{
                     if (@available(iOS 15.0, *)) {
                         weakSelf.inAppBrowserNav.sheetPresentationController.containerView.overrideUserInterfaceStyle = weakSelf.inAppBrowserViewController.overrideUserInterfaceStyle;
@@ -556,33 +316,23 @@ static CDVWKInAppBrowser* instance = nil;
 - (void)hide:(CDVInvokedUrlCommand*)command
 {
     if (self.inAppBrowserViewController == nil) {
-        [self ackHideCompletion];
+        NSLog(@"Tried to hide IAB after it was closed.");
+        CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
+                                                      messageAsDictionary:@{@"type":@"hidecompletion"}];
+        [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackId];
         return;
+
+
     }
 
-    if (self.browserHidden) {
-        [self ackHideCompletion];
-        return;
-    }
-
-    self.browserHidden = YES;
-
-    if (self.browserCollapsed) {
-        [self removeCollapsedBarAnimated:NO completion:nil];
-        [self ackHideCompletion];
-        return;
-    }
-
-    if (isHiding) {
-        return;
-    }
-
+    // Run later to avoid the "took a long time" log message.
+    if (isHiding)
+      return;
     isHiding = TRUE;
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *presentingViewController = self.inAppBrowserViewController.navigationController.presentingViewController
-            ?: self.inAppBrowserNav.presentingViewController;
-        if (presentingViewController) {
-            [presentingViewController dismissViewControllerAnimated:YES completion:^{
+        if (self.inAppBrowserViewController.navigationController.presentingViewController) {
+            [self.inAppBrowserViewController.navigationController.presentingViewController dismissViewControllerAnimated:YES completion:^{
                 [self ackHideCompletion];
             }];
         } else {
@@ -593,11 +343,6 @@ static CDVWKInAppBrowser* instance = nil;
 
 - (void)ackHideCompletion
 {
-    if (self.callbackId == nil) {
-        isHiding = FALSE;
-        return;
-    }
-
     CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
                                                   messageAsDictionary:@{@"type":@"hidecompletion"}];
     [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
@@ -923,10 +668,6 @@ static CDVWKInAppBrowser* instance = nil;
 
 - (void)browserExit
 {
-    self.browserHidden = NO;
-    self.browserCollapsed = NO;
-    [self removeCollapsedBarAnimated:NO completion:nil];
-
     if (self.callbackId != nil) {
         CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
                                                       messageAsDictionary:@{@"type":@"exit"}];
@@ -1032,167 +773,11 @@ BOOL isExiting = FALSE;
     [self.view addSubview:self.spinner];
 }
 
-- (void)resetCollapsedIcon
-{
-    self.collapsedIconRequestId += 1;
-    self.collapsedIconImage = nil;
-    self.collapsedIconURLString = nil;
-}
-
-- (NSString *)defaultCollapsedIconURLStringForURL:(NSURL *)pageURL
-{
-    if (pageURL.scheme.length == 0 || pageURL.host.length == 0) {
-        return nil;
-    }
-
-    return [NSString stringWithFormat:@"%@://%@/favicon.ico", pageURL.scheme, pageURL.host];
-}
-
-- (UIImage *)roundedCollapsedIconFromImage:(UIImage *)image
-{
-    if (image == nil) {
-        return nil;
-    }
-
-    CGSize canvasSize = CGSizeMake(kCollapsedBarIconSize, kCollapsedBarIconSize);
-    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:canvasSize];
-    return [renderer imageWithActions:^(UIGraphicsImageRendererContext * _Nonnull context) {
-        UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, canvasSize.width, canvasSize.height) cornerRadius:8];
-        [path addClip];
-
-        CGSize imageSize = image.size;
-        if (imageSize.width <= 0 || imageSize.height <= 0) {
-            [image drawInRect:CGRectMake(0, 0, canvasSize.width, canvasSize.height)];
-            return;
-        }
-
-        CGFloat scale = MAX(canvasSize.width / imageSize.width, canvasSize.height / imageSize.height);
-        CGSize scaledSize = CGSizeMake(imageSize.width * scale, imageSize.height * scale);
-        CGRect drawRect = CGRectMake((canvasSize.width - scaledSize.width) / 2.0,
-                                     (canvasSize.height - scaledSize.height) / 2.0,
-                                     scaledSize.width,
-                                     scaledSize.height);
-        [image drawInRect:drawRect];
-    }];
-}
-
-- (void)loadCollapsedIconFromURL:(NSURL *)iconURL requestId:(NSUInteger)requestId fallbackURL:(NSURL *)fallbackURL
-{
-    if (iconURL == nil) {
-        return;
-    }
-
-    NSString *iconURLString = iconURL.absoluteString;
-    if (iconURLString.length == 0) {
-        return;
-    }
-
-    if ([iconURLString isEqualToString:self.collapsedIconURLString] && self.collapsedIconImage != nil) {
-        return;
-    }
-
-    self.collapsedIconURLString = iconURLString;
-    __weak typeof(self) weakSelf = self;
-    void (^handleData)(NSData *) = ^(NSData *data) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            typeof(self) strongSelf = weakSelf;
-            if (!strongSelf || strongSelf.collapsedIconRequestId != requestId) {
-                return;
-            }
-
-            UIImage *iconImage = data.length > 0 ? [UIImage imageWithData:data scale:[UIScreen mainScreen].scale] : nil;
-            if (iconImage != nil) {
-                strongSelf.collapsedIconImage = [strongSelf roundedCollapsedIconFromImage:iconImage];
-                [strongSelf.navigationDelegate refreshCollapsedBar];
-                return;
-            }
-
-            NSString *fallbackString = fallbackURL.absoluteString;
-            if (fallbackURL != nil && ![iconURLString isEqualToString:fallbackString]) {
-                [strongSelf loadCollapsedIconFromURL:fallbackURL requestId:requestId fallbackURL:nil];
-                return;
-            }
-
-            strongSelf.collapsedIconImage = nil;
-            [strongSelf.navigationDelegate refreshCollapsedBar];
-        });
-    };
-
-    if ([[iconURL.scheme lowercaseString] isEqualToString:@"data"]) {
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-            NSError *dataError = nil;
-            NSData *data = [NSData dataWithContentsOfURL:iconURL options:0 error:&dataError];
-            if (dataError != nil) {
-                NSLog(@"Unable to load collapsed icon %@: %@", iconURL, dataError.localizedDescription);
-            }
-            handleData(data);
-        });
-        return;
-    }
-
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithURL:iconURL
-                                                             completionHandler:^(__unused NSData *data, __unused NSURLResponse *response, NSError *error) {
-        if (error != nil) {
-            NSLog(@"Unable to load collapsed icon %@: %@", iconURL, error.localizedDescription);
-            handleData(nil);
-            return;
-        }
-
-        handleData(data);
-    }];
-    [task resume];
-}
-
-- (void)refreshCollapsedIcon
-{
-    NSURL *pageURL = self.webView.URL ?: self.currentURL;
-    if (pageURL == nil) {
-        [self resetCollapsedIcon];
-        [self.navigationDelegate refreshCollapsedBar];
-        return;
-    }
-
-    NSUInteger requestId = self.collapsedIconRequestId;
-    NSString *fallbackURLString = [self defaultCollapsedIconURLStringForURL:pageURL];
-    NSURL *fallbackURL = fallbackURLString.length > 0 ? [NSURL URLWithString:fallbackURLString] : nil;
-    NSString *iconScript =
-        @"(function(){"
-        "const links = Array.from(document.querySelectorAll('link[rel*=\"icon\"], link[rel=\"apple-touch-icon\"], link[rel=\"apple-touch-icon-precomposed\"]'));"
-        "const hrefs = links.map((link) => link.href).filter(Boolean);"
-        "const preferred = hrefs.find((href) => !/\\.ico($|\\?)/i.test(href) && !/\\.svg($|\\?)/i.test(href))"
-        "  || hrefs.find((href) => !/\\.svg($|\\?)/i.test(href))"
-        "  || hrefs[0]"
-        "  || (window.location.origin ? window.location.origin + '/favicon.ico' : '');"
-        "return preferred || '';"
-        "})();";
-
-    __weak typeof(self) weakSelf = self;
-    [self.webView evaluateJavaScript:iconScript completionHandler:^(id result, NSError *error) {
-        typeof(self) strongSelf = weakSelf;
-        if (!strongSelf || strongSelf.collapsedIconRequestId != requestId) {
-            return;
-        }
-
-        if (error != nil) {
-            [strongSelf loadCollapsedIconFromURL:fallbackURL requestId:requestId fallbackURL:nil];
-            return;
-        }
-
-        NSString *iconString = [result isKindOfClass:[NSString class]]
-            ? [(NSString *)result stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]
-            : @"";
-        NSURL *iconURL = iconString.length > 0 ? [[NSURL URLWithString:iconString relativeToURL:pageURL] absoluteURL] : fallbackURL;
-        [strongSelf loadCollapsedIconFromURL:iconURL requestId:requestId fallbackURL:fallbackURL];
-    }];
-}
-
 - (void)setupWebView {
     if (_webView != nil) {
         [self setCurrentURL: nil];
         [_webView removeFromSuperview];
     }
-
-    [self resetCollapsedIcon];
 
     CGRect webViewBounds = self.view.bounds;
     WKUserContentController* userContentController = [[WKUserContentController alloc] init];
@@ -1520,11 +1105,6 @@ BOOL isExiting = FALSE;
 
 - (void)navigateTo:(NSURL*)url
 {
-    [self resetCollapsedIcon];
-    if ((self.navigationDelegate != nil) && [self.navigationDelegate respondsToSelector:@selector(refreshCollapsedBar)]) {
-        [self.navigationDelegate refreshCollapsedBar];
-    }
-
     // inject the preload script into the webview
     WKUserScript *script = [[WKUserScript alloc] initWithSource:_preloadCode
                                                   injectionTime:WKUserScriptInjectionTimeAtDocumentStart
@@ -1562,30 +1142,6 @@ BOOL isExiting = FALSE;
     return result;
 }
 
-- (NSString*)collapsedTitleText
-{
-    NSString *webTitle = self.webView.title;
-    if (webTitle.length > 0) {
-        return webTitle;
-    }
-
-    NSString *buttonTitle = [self.titleButton currentTitle];
-    if (buttonTitle.length > 0) {
-        return buttonTitle;
-    }
-
-    if (_browserOptions.title.length > 0) {
-        return _browserOptions.title;
-    }
-
-    NSURL *activeURL = self.currentURL ?: self.webView.URL;
-    if (activeURL.host.length > 0) {
-        return activeURL.host;
-    }
-
-    return @"Browser";
-}
-
 - (void) updateNavigationButtons
 {
     self.closeBarButton = nil;
@@ -1621,9 +1177,6 @@ BOOL isExiting = FALSE;
             [_subtitleButton setTitle:_titleButton.titleLabel.text forState:UIControlStateNormal];
             [_titleButton setTitle: newTitle forState:UIControlStateNormal];
         }
-        if ((self.navigationDelegate != nil) && [self.navigationDelegate respondsToSelector:@selector(refreshCollapsedBar)]) {
-            [self.navigationDelegate refreshCollapsedBar];
-        }
         return;
     }
 
@@ -1632,19 +1185,11 @@ BOOL isExiting = FALSE;
 
 #pragma mark - UISheetPresentationControllerDelegate
 
-- (void)presentationControllerDidDismiss:(UIPresentationController *)presentationController
-{
-    if (isExiting || isHiding || self.navigationDelegate == nil || self.navigationDelegate.browserHidden) {
-        return;
-    }
-
-    UIViewController *presentedViewController = presentationController.presentedViewController;
-    if (presentedViewController != self.navigationController && presentedViewController != self) {
-        return;
-    }
-
-    if ([self.navigationDelegate respondsToSelector:@selector(collapse)]) {
-        [self.navigationDelegate collapse];
+- (void)sheetPresentationControllerDidChangeSelectedDetentIdentifier:(UISheetPresentationController *)sheetPresentationController  API_AVAILABLE(ios(15.0)){
+    UISheetPresentationControllerDetentIdentifier detentIdentifier = sheetPresentationController.selectedDetentIdentifier;
+    // we don't want to let users use medium detent. It's just to make scale-down animation have a threshold!
+    if (detentIdentifier == UISheetPresentationControllerDetentIdentifierMedium) {
+        [self forceClose];
     }
 }
 
@@ -1671,10 +1216,6 @@ BOOL isExiting = FALSE;
 
     if (isTopLevelNavigation) {
         self.currentURL = url;
-        [self resetCollapsedIcon];
-        if ((self.navigationDelegate != nil) && [self.navigationDelegate respondsToSelector:@selector(refreshCollapsedBar)]) {
-            [self.navigationDelegate refreshCollapsedBar];
-        }
     }
 
     [self.navigationDelegate webView:theWebView decidePolicyForNavigationAction:navigationAction decisionHandler:decisionHandler];
@@ -1687,10 +1228,6 @@ BOOL isExiting = FALSE;
     theWebView.scrollView.contentInset = UIEdgeInsetsZero;
 
     [self.spinner stopAnimating];
-    [self refreshCollapsedIcon];
-    if ((self.navigationDelegate != nil) && [self.navigationDelegate respondsToSelector:@selector(refreshCollapsedBar)]) {
-        [self.navigationDelegate refreshCollapsedBar];
-    }
 
     [self.navigationDelegate didFinishNavigation:theWebView];
 }
@@ -1752,6 +1289,12 @@ BOOL isExiting = FALSE;
     }];
 
     [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
+}
+
+#pragma mark UIAdaptivePresentationControllerDelegate
+
+- (void)presentationControllerWillDismiss:(UIPresentationController *)presentationController {
+    isExiting = TRUE;
 }
 
 @end //CDVWKInAppBrowserViewController
