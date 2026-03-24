@@ -762,6 +762,7 @@ public class InAppBrowser extends CordovaPlugin {
      */
     private void navigate(String url) {
         currentBrowserUrl = url;
+        resetCollapsedIcon();
         if (!url.startsWith("http") && !url.startsWith("file:")) {
             this.inAppWebView.loadUrl("http://" + url);
         } else {
@@ -914,6 +915,10 @@ public class InAppBrowser extends CordovaPlugin {
 
         collapsedIconView.setImageBitmap(icon);
         collapsedIconView.setVisibility(View.VISIBLE);
+    }
+
+    private void resetCollapsedIcon() {
+        updateCollapsedIcon(null);
     }
 
     private void updateCollapsedBarLayout() {
@@ -1902,6 +1907,7 @@ public class InAppBrowser extends CordovaPlugin {
         popup.setOnItemClickListener((parent, view, position, id) -> {
             Pair<String, String> entry = urlMenu.get(position);
             fadeTextView(titleTextView, entry.first + " ");
+            resetCollapsedIcon();
             inAppWebView.loadUrl("about:blank");
             inAppWebView.post(() -> navigate(entry.second));
             onMenuItemSelectedCallback(entry);
@@ -2192,6 +2198,7 @@ public class InAppBrowser extends CordovaPlugin {
         @Override
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
             super.onPageStarted(view, url, favicon);
+            resetCollapsedIcon();
 
             if (!preloadCode.isEmpty())
                 view.evaluateJavascript(preloadCode, null);
