@@ -19,6 +19,10 @@
 
 #import <Cordova/CDVPlugin.h>
 #import <Cordova/CDVInvokedUrlCommand.h>
+#ifndef __CORDOVA_8_0_0
+#import <Cordova/NSDictionary+CordovaPreferences.h>
+typedef NSDictionary CDVSettingsDictionary;
+#endif
 #import <Cordova/CDVScreenOrientationDelegate.h>
 #import "CDVWKInAppBrowserUIDelegate.h"
 #import "CDVInAppBrowserOptions.h"
@@ -68,7 +72,7 @@
     NSArray<CDVInAppBrowserUrlMenuItem *> *_menuItems;
     @private
     NSString *_preloadCode;
-    NSDictionary *_settings;
+    CDVSettingsDictionary *_settings;
 }
 
 @property (nonatomic, strong) IBOutlet WKWebView* webView;
@@ -94,6 +98,6 @@
 - (id)initWithBrowserOptions: (CDVInAppBrowserOptions*) browserOptions
                    menuItems: (NSArray<CDVInAppBrowserUrlMenuItem *>*) menuItems
                  preloadCode: (NSString*) preloadCode
-                 andSettings:(NSDictionary*) settings;
+                 andSettings:(CDVSettingsDictionary*) settings;
 
 @end

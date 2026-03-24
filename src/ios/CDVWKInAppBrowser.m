@@ -18,8 +18,15 @@
  */
 
 #import "CDVWKInAppBrowser.h"
-#import <Cordova/NSDictionary+CordovaPreferences.h>
+
+#if __has_include(<Cordova/CDVWebViewProcessPoolFactory.h>)
+/*
+    CDVWebViewProcessPoolFactory is deprecated since cordova-ios 8.0.0
+    and will be removed in a future release.
+*/
 #import <Cordova/CDVWebViewProcessPoolFactory.h>
+#endif
+
 #import <Cordova/CDVPluginResult.h>
 #import <QuartzCore/QuartzCore.h>
 
@@ -147,7 +154,14 @@ static CDVWKInAppBrowser* instance = nil;
         NSDate* dateFrom = [NSDate dateWithTimeIntervalSince1970:0];
         [dataStore removeDataOfTypes:[WKWebsiteDataStore allWebsiteDataTypes] modifiedSince:dateFrom completionHandler:^{
             NSLog(@"Removed all WKWebView data");
-            self.inAppBrowserViewController.webView.configuration.processPool = [[WKProcessPool alloc] init]; // create new process pool to flush all data
+            if (@available(iOS 15.0, *)) {
+                // Since iOS 15 WKProcessPool is deprecated and has no effect.
+            } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+                self.inAppBrowserViewController.webView.configuration.processPool = [[WKProcessPool alloc] init];
+#pragma clang diagnostic pop
+            }
         }];
     }
 
@@ -969,7 +983,7 @@ BOOL isExiting = FALSE;
 - (id)initWithBrowserOptions: (CDVInAppBrowserOptions*) browserOptions
                    menuItems: (NSArray<CDVInAppBrowserUrlMenuItem *>*) menuItems
                  preloadCode: (NSString*) preloadCode
-                 andSettings:(NSDictionary *)settings
+                 andSettings:(CDVSettingsDictionary *)settings
 {
     self = [super init];
     if (self != nil) {
@@ -1453,22 +1467,21 @@ BOOL isExiting = FALSE;
         isExiting = FALSE;
     }
 }
-//
-//- (UIStatusBarStyle)preferredStatusBarStyle
-//{
-//    NSString* statusBarStylePreference = [self settingForKey:@"InAppBrowserStatusBarStyle"];
-//    if (statusBarStylePreference && [statusBarStylePreference isEqualToString:@"lightcontent"]) {
-//        return UIStatusBarStyleLightContent;
-//    } else if (statusBarStylePreference && [statusBarStylePreference isEqualToString:@"darkcontent"]) {
-//        if (@available(iOS 13.0, *)) {
-//            return UIStatusBarStyleDarkContent;
-//        } else {
-//            return UIStatusBarStyleDefault;
-//        }
-//    } else {
-//        return UIStatusBarStyleDefault;
-//    }
-//}
+- (UIStatusBarStyle)preferredStatusBarStyle
+{
+    NSString *statusBarStylePreference = [_settings cordovaSettingForKey:@"InAppBrowserStatusBarStyle"];
+    if (statusBarStylePreference && [statusBarStylePreference isEqualToString:@"lightcontent"]) {
+        return UIStatusBarStyleLightContent;
+    } else if (statusBarStylePreference && [statusBarStylePreference isEqualToString:@"darkcontent"]) {
+        if (@available(iOS 13.0, *)) {
+            return UIStatusBarStyleDarkContent;
+        } else {
+            return UIStatusBarStyleDefault;
+        }
+    } else {
+        return UIStatusBarStyleDefault;
+    }
+}
 
 - (BOOL)prefersStatusBarHidden {
     return NO;

@@ -15,28 +15,33 @@
 # specific language governing permissions and limitations
 # under the License.
 
-name: Lint Test
+name: Chrome Testsuite
 
 on:
   push:
-    paths:
-      - '**.js'
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
       - '.eslint*'
-      - '.github/workflow/lint.yml'
   pull_request:
-    paths:
-      - '**.js'
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
       - '.eslint*'
-      - '.github/workflow/lint.yml'
 
 permissions:
   contents: read
 
 jobs:
   test:
-    name: Lint Test
+    name: Chrome Latest Test
     runs-on: ubuntu-latest
+
+    # hoist configurations to top that are expected to be updated
     env:
+      # Storing a copy of the repo
+      repo: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+
       node-version: 24
 
     steps:
@@ -45,6 +50,9 @@ jobs:
         with:
           node-version: ${{ env.node-version }}
 
+      - name: Run install xvfb
+        run: sudo apt-get install xvfb
+
       - name: Run Environment Information
         run: |
           node --version
@@ -52,8 +60,17 @@ jobs:
 
       - name: Run npm install
         run: |
+          npm i -g cordova@latest
           npm ci
 
-      - name: Run lint test
-        run: |
-          npm run lint
+      - name: Run paramedic install
+        if: ${{ endswith(env.repo, '/cordova-paramedic') != true }}
+        run: npm i -g github:apache/cordova-paramedic
+
+      - name: Run paramedic tests
+        env:
+          test_config: 'browser.config.json'
+          # Generally, this should automatically work for cordova-paramedic & plugins. If the path is unique, this can be manually changed.
+          test_plugin_path: ${{ endswith(env.repo, '/cordova-paramedic') && './spec/testable-plugin/' || './' }}
+          paramedic: ${{ endswith(env.repo, '/cordova-paramedic') && 'node main.js' || 'cordova-paramedic' }}
+        run: xvfb-run --auto-servernum ${{ env.paramedic }} --config ./pr/local/${{ env.test_config }} --plugin ${{ env.test_plugin_path }}

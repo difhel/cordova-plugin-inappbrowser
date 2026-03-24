@@ -1,23 +1,21 @@
-/*
- *
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
- *
- */
+/**
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+*/
 
 const cordova = require('cordova');
 const isIos = cordova.platformId === 'ios';
@@ -42,11 +40,6 @@ exports.defineAutoTests = function () {
         });
 
         describe('open method', function () {
-            if (cordova.platformId === 'osx') {
-                pending('Open method not fully supported on OSX.');
-                return;
-            }
-
             let iabInstance;
             let originalTimeout;
             const url = 'https://dist.apache.org/repos/dist/dev/cordova/';
@@ -220,7 +213,7 @@ exports.defineManualTests = function (contentEl, createActionButton) {
             iab = cordova.InAppBrowser.open(url, target, params, callbacks);
         }
         if (!iab) {
-            alert('open returned ' + iab); // eslint-disable-line no-undef
+            alert('open returned ' + iab);
             return;
         }
 
@@ -230,19 +223,19 @@ exports.defineManualTests = function (contentEl, createActionButton) {
             // Verify that event.url gets updated on redirects.
             if (e.type === 'loadstart') {
                 if (e.url === lastLoadStartURL) {
-                    alert('Unexpected: loadstart fired multiple times for the same URL.'); // eslint-disable-line no-undef
+                    alert('Unexpected: loadstart fired multiple times for the same URL.');
                 }
                 lastLoadStartURL = e.url;
             }
             // Verify the right number of loadstart events were fired.
             if (e.type === 'loadstop' || e.type === 'loaderror') {
                 if (e.url !== lastLoadStartURL) {
-                    alert('Unexpected: ' + e.type + " event.url != loadstart's event.url"); // eslint-disable-line no-undef
+                    alert('Unexpected: ' + e.type + " event.url != loadstart's event.url");
                 }
                 if (numExpectedRedirects === 0 && counts.loadstart !== 1) {
                     // Do allow a loaderror without a loadstart (e.g. in the case of an invalid URL).
                     if (!(e.type === 'loaderror' && counts.loadstart === 0)) {
-                        alert('Unexpected: got multiple loadstart events. (' + counts.loadstart + ')'); // eslint-disable-line no-undef
+                        alert('Unexpected: got multiple loadstart events. (' + counts.loadstart + ')');
                     }
                 } else if (numExpectedRedirects > 0 && counts.loadstart < numExpectedRedirects + 1) {
                     alert(
@@ -250,7 +243,7 @@ exports.defineManualTests = function (contentEl, createActionButton) {
                             (numExpectedRedirects + 1) +
                             ' loadstart events, but got ' +
                             counts.loadstart
-                    ); // eslint-disable-line no-undef
+                    );
                 }
                 wasReset = true;
                 numExpectedRedirects = 0;
@@ -260,9 +253,9 @@ exports.defineManualTests = function (contentEl, createActionButton) {
             if (e.type === 'exit') {
                 const numStopEvents = counts.loadstop + counts.loaderror;
                 if (numStopEvents === 0 && !wasReset) {
-                    alert('Unexpected: browser closed without a loadstop or loaderror.'); // eslint-disable-line no-undef
+                    alert('Unexpected: browser closed without a loadstop or loaderror.');
                 } else if (numStopEvents > 1) {
-                    alert('Unexpected: got multiple loadstop/loaderror events.'); // eslint-disable-line no-undef
+                    alert('Unexpected: got multiple loadstop/loaderror events.');
                 }
             }
         }
@@ -291,10 +284,10 @@ exports.defineManualTests = function (contentEl, createActionButton) {
         const iab = doOpen(url, '_blank', 'location=yes');
         const callback = function (results) {
             if (results && results.length === 0) {
-                alert('Results verified'); // eslint-disable-line no-undef
+                alert('Results verified');
             } else {
                 console.log(results);
-                alert('Got: ' + typeof results + '\n' + JSON.stringify(results)); // eslint-disable-line no-undef
+                alert('Got: ' + typeof results + '\n' + JSON.stringify(results));
             }
         };
         if (cssUrl) {
@@ -317,10 +310,10 @@ exports.defineManualTests = function (contentEl, createActionButton) {
                     useCallback &&
                         function (results) {
                             if (results && results.length === 0) {
-                                alert('Results verified'); // eslint-disable-line no-undef
+                                alert('Results verified');
                             } else {
                                 console.log(results);
-                                alert('Got: ' + typeof results + '\n' + JSON.stringify(results)); // eslint-disable-line no-undef
+                                alert('Got: ' + typeof results + '\n' + JSON.stringify(results));
                             }
                         }
                 );
@@ -338,10 +331,10 @@ exports.defineManualTests = function (contentEl, createActionButton) {
                     useCallback &&
                         function (results) {
                             if (results && results.length === 1 && results[0] === 'abc') {
-                                alert('Results verified'); // eslint-disable-line no-undef
+                                alert('Results verified');
                             } else {
                                 console.log(results);
-                                alert('Got: ' + typeof results + '\n' + JSON.stringify(results)); // eslint-disable-line no-undef
+                                alert('Got: ' + typeof results + '\n' + JSON.stringify(results));
                             }
                         }
                 );
@@ -351,7 +344,7 @@ exports.defineManualTests = function (contentEl, createActionButton) {
     let hiddenwnd = null;
     const loadlistener = function (event) {
         alert('background window loaded ');
-    }; // eslint-disable-line no-undef
+    };
     function openHidden (url, startHidden) {
         let shopt = startHidden ? 'hidden=yes' : '';
         if (platformOpts) {
@@ -359,7 +352,7 @@ exports.defineManualTests = function (contentEl, createActionButton) {
         }
         hiddenwnd = cordova.InAppBrowser.open(url, 'random_string', shopt);
         if (!hiddenwnd) {
-            alert('cordova.InAppBrowser.open returned ' + hiddenwnd); // eslint-disable-line no-undef
+            alert('cordova.InAppBrowser.open returned ' + hiddenwnd);
             return;
         }
         if (startHidden) hiddenwnd.addEventListener('loadstop', loadlistener);
@@ -384,6 +377,7 @@ exports.defineManualTests = function (contentEl, createActionButton) {
         'Make sure http://www.apple.com is not in the white list.</br>' +
         'In iOS, starred <span style="vertical-align:super">*</span> tests will put the app in a state with no way to return. </br>' +
         '<h4>User-Agent: <span id="user-agent"> </span></hr>' +
+        'Make sure your config.xml contains: &lt;preference name="AllowedSchemes" value="custom" &gt;/<br/>' +
         '</div>';
 
     const local_tests =
@@ -532,6 +526,11 @@ exports.defineManualTests = function (contentEl, createActionButton) {
         '<p/> <div id="openHardwareBackDefaultAfterNo"></div>' +
         'Expected result: consistently open browsers with with the appropriate option: hardwareback=defaults to yes then hardwareback=no then hardwareback=defaults to yes. By default hardwareback is yes so pressing back button should navigate backwards in history then close InAppBrowser';
 
+    const customscheme_tests =
+        '<h1>Customscheme</h1>' +
+        '<p/> <div id="openCustomscheme"></div>' +
+        'Expected result: open an alert dialog with the text "Results verified". Works only on Android and iOS.';
+
     contentEl.innerHTML =
         info_div +
         platform_info +
@@ -546,7 +545,8 @@ exports.defineManualTests = function (contentEl, createActionButton) {
         clearing_cache_tests +
         video_tag_tests +
         local_with_anchor_tag_tests +
-        hardwareback_tests;
+        hardwareback_tests +
+        customscheme_tests;
 
     document.getElementById('user-agent').textContent = navigator.userAgent;
 
@@ -985,5 +985,29 @@ exports.defineManualTests = function (contentEl, createActionButton) {
             });
         },
         'openHardwareBackDefaultAfterNo'
+    );
+
+    // Customscheme
+    createActionButton(
+        'customscheme',
+        function () {
+            const ref = cordova.InAppBrowser.open('about:blank', '_blank', 'hidden=yes' + (platformOpts ? ',' + platformOpts : ''));
+            ref.addEventListener('loadstop', function (_) {
+                ref.executeScript({ code: 'window.location.replace("custom://test");' });
+            });
+            ref.addEventListener('customscheme', function (e) {
+                if (e && e.url === 'custom://test') {
+                    alert('Results verified');
+                } else {
+                    alert('Got: ' + e.url);
+                }
+                ref.close();
+            });
+            ref.addEventListener('loaderror', function (e) {
+                alert('Load error: ' + e.message + '\nYou may need to set the AllowedSchemes preference');
+                ref.close();
+            });
+        },
+        'openCustomscheme'
     );
 };
