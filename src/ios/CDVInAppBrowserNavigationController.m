@@ -33,4 +33,34 @@
     [super viewDidLoad];
 }
 
+- (CGRect)invertFrameIfNeeded:(CGRect)rect
+{
+    if (UIInterfaceOrientationIsLandscape([[UIApplication sharedApplication] statusBarOrientation])) {
+        CGFloat temp = rect.size.width;
+        rect.size.width = rect.size.height;
+        rect.size.height = temp;
+    }
+    rect.origin = CGPointZero;
+    return rect;
+}
+
+#pragma mark CDVScreenOrientationDelegate
+
+- (BOOL)shouldAutorotate
+{
+    if ((self.orientationDelegate != nil) && [self.orientationDelegate respondsToSelector:@selector(shouldAutorotate)]) {
+        return [self.orientationDelegate shouldAutorotate];
+    }
+    return YES;
+}
+
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations
+{
+    if ((self.orientationDelegate != nil) && [self.orientationDelegate respondsToSelector:@selector(supportedInterfaceOrientations)]) {
+        return [self.orientationDelegate supportedInterfaceOrientations];
+    }
+
+    return 1 << UIInterfaceOrientationPortrait;
+}
+
 @end
