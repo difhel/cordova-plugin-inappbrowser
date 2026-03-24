@@ -40,6 +40,12 @@
 @property (nonatomic, retain) CDVWKInAppBrowserViewController* inAppBrowserViewController;
 @property (nonatomic, copy) NSString* callbackId;
 @property (nonatomic, copy) NSRegularExpression *callbackIdPattern;
+@property (nonatomic, strong) UIView* collapsedBarView;
+@property (nonatomic, strong) UIButton* collapsedTitleButton;
+@property (nonatomic, strong) UIButton* collapsedCloseButton;
+@property (nonatomic, strong) UIButton* collapsedExpandButton;
+@property (nonatomic, assign) BOOL browserCollapsed;
+@property (nonatomic, assign) BOOL browserHidden;
 
 + (id) getInstance;
 - (void)open:(CDVInvokedUrlCommand*)command;
@@ -49,6 +55,9 @@
 - (void)hide:(CDVInvokedUrlCommand*)command;
 - (void)loadAfterBeforeload:(CDVInvokedUrlCommand*)command;
 - (void)onMenuItemSelected:(CDVInAppBrowserUrlMenuItem *)item;
+- (void)collapse;
+- (void)expandCollapsedBrowser;
+- (void)refreshCollapsedBar;
 
 @end
 
@@ -80,6 +89,7 @@
 - (void)forceClose;
 - (void)navigateTo:(NSURL*)url;
 - (void)updateNavigationButtons;
+- (NSString*)collapsedTitleText;
 
 - (id)initWithBrowserOptions: (CDVInAppBrowserOptions*) browserOptions
                    menuItems: (NSArray<CDVInAppBrowserUrlMenuItem *>*) menuItems

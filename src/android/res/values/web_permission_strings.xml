@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="web_permission_prompt">Allow %1$s to use your %2$s?</string>
+    <string name="web_permission_prompt">%1$s wants access to %2$s.</string>
     <string name="web_permission_allow">Allow</string>
-    <string name="web_permission_deny">Don\'t allow</string>
+    <string name="web_permission_deny">Don&#39;t Allow</string>
     <string name="web_permission_camera">camera</string>
     <string name="web_permission_microphone">microphone</string>
     <string name="web_permission_location">location</string>
