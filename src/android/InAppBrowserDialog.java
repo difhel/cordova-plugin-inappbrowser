@@ -3,30 +3,31 @@ package org.apache.cordova.inappbrowser;
 import android.content.Context;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Gravity;
 import android.widget.FrameLayout;
 
 public class InAppBrowserDialog {
     private final Context context;
     private final FrameLayout dialogContainer;
+    private View contentView;
     boolean isVisible = false;
 
     public InAppBrowserDialog(Context context) {
         this.context = context;
 
         dialogContainer = new FrameLayout(context);
-        dialogContainer.setLayoutParams(new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-        ));
+        updateDisplayMode(false);
     }
 
     public void setContentView(View contentView) {
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-        );
+        this.contentView = contentView;
         dialogContainer.removeAllViews();
-        dialogContainer.addView(contentView, params);
+        dialogContainer.addView(contentView);
+        updateDisplayMode(false);
+    }
+
+    public void setCollapsed(boolean collapsed) {
+        updateDisplayMode(collapsed);
     }
 
     public void show(Boolean animated) {
@@ -85,6 +86,27 @@ public class InAppBrowserDialog {
 
     public View getView() {
         return dialogContainer;
+    }
+
+    private void updateDisplayMode(boolean collapsed) {
+        int width = collapsed ? ViewGroup.LayoutParams.WRAP_CONTENT : ViewGroup.LayoutParams.MATCH_PARENT;
+        int height = collapsed ? ViewGroup.LayoutParams.WRAP_CONTENT : ViewGroup.LayoutParams.MATCH_PARENT;
+        int gravity = collapsed ? Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL : Gravity.NO_GRAVITY;
+
+        updateLayoutParams(dialogContainer, width, height, gravity);
+        if (contentView != null) {
+            updateLayoutParams(contentView, width, height, gravity);
+        }
+    }
+
+    private void updateLayoutParams(View view, int width, int height, int gravity) {
+        FrameLayout.LayoutParams params = view.getLayoutParams() instanceof FrameLayout.LayoutParams
+                ? (FrameLayout.LayoutParams) view.getLayoutParams()
+                : new FrameLayout.LayoutParams(width, height);
+        params.width = width;
+        params.height = height;
+        params.gravity = gravity;
+        view.setLayoutParams(params);
     }
 
     private float dpToPx(int dp) {
