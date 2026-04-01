@@ -72,8 +72,9 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.ArrayAdapter;
-import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListAdapter;
 import android.widget.PopupMenu;
@@ -114,8 +115,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.StringTokenizer;
-
-import capacitor.cordova.android.plugins.R;
 
 @SuppressLint("SetJavaScriptEnabled")
 public class InAppBrowser extends CordovaPlugin {
@@ -158,6 +157,16 @@ public class InAppBrowser extends CordovaPlugin {
     private static final String ANIMATED = "animated";
 
     private static final int TOOLBAR_HEIGHT = 64;
+    private static final int TOOLBAR_BUTTON_SIZE = 40;
+    private static final int TOOLBAR_BUTTON_PADDING = 8;
+    private static final int TOOLBAR_HORIZONTAL_MARGIN = 16;
+    private static final int TOOLBAR_BUTTON_SPACING = 4;
+    private static final int TOOLBAR_TITLE_SPACING = 8;
+    private static final int COLLAPSED_BAR_HEIGHT = 48;
+    private static final int COLLAPSED_BAR_MAX_WIDTH = 320;
+    private static final int COLLAPSED_BAR_HORIZONTAL_MARGIN = 16;
+    // Classic renders the app bottom bar inside the web view, so keep the floating pill above it.
+    private static final int COLLAPSED_BAR_BOTTOM_OFFSET = 64;
     private static final int MENU_RELOAD = 101;
     private static final int MENU_BROWSER = 102;
     private static final int MENU_COPY = 103;
@@ -171,14 +180,19 @@ public class InAppBrowser extends CordovaPlugin {
     private WebView inAppWebView;
     private TextView titleTextView;
     private TextView subtitleTextView;
+    private ImageButton backButton;
     private ImageButton moreButton;
-    private View actionsSeparatorView;
-    private ImageButton closeButton;
+    private ImageButton collapseButton;
     private CallbackContext callbackContext;
-    private View backView;
+    private FrameLayout contentRoot;
     private LinearLayout main;
     private RelativeLayout toolbar;
-    private GradientDrawable actionButtonContainerBackground;
+    private LinearLayout collapsedBar;
+    private GradientDrawable collapsedBarBackground;
+    private TextView collapsedTitleTextView;
+    private ImageView collapsedIconView;
+    private ImageButton collapsedCloseButton;
+    private ImageButton collapsedExpandButton;
     private boolean showLocationBar = true;
     private boolean showZoomControls = false;
     private boolean openWindowHidden = false;
@@ -213,6 +227,11 @@ public class InAppBrowser extends CordovaPlugin {
     private Boolean loadedOnce = false;
     private Boolean shouldClearHistory = false;
     private Drawable arrowDrawable;
+    private boolean isCollapsed = false;
+    private int currentSystemBottomInset = 0;
+    private String currentBrowserUrl = "";
+    private String currentCollapsedTitle = "";
+    private Bitmap currentPageIcon;
 
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
@@ -222,6 +241,10 @@ public class InAppBrowser extends CordovaPlugin {
             @Override
             public void handleOnBackPressed() {
                 if (dialog != null && dialog.isVisible) {
+                    if (isCollapsed) {
+                        closeDialog();
+                        return;
+                    }
                     // Delegate to InAppBrowser for back handling
                     if (hardwareBack() && canGoBack()) {
                         goBack();
@@ -400,7 +423,8 @@ public class InAppBrowser extends CordovaPlugin {
                 public void run() {
                     if (dialog != null && !cordova.getActivity().isFinishing()) {
                         dialog.show(animated);
-                        onBackPressedCallback.setEnabled(true);
+                        updateDialogDisplayMode();
+                        updateBackPressedHandlerState();
                     }
                 }
             });
@@ -414,6 +438,7 @@ public class InAppBrowser extends CordovaPlugin {
                     if (dialog != null && !cordova.getActivity().isFinishing()) {
                         dialog.hide();
                     }
+                    onBackPressedCallback.setEnabled(false);
                 }
             });
             PluginResult pluginResult = new PluginResult(PluginResult.Status.OK);
@@ -616,20 +641,54 @@ public class InAppBrowser extends CordovaPlugin {
             @Override
             public void run() {
                 final WebView childView = inAppWebView;
+                final boolean closingFromCollapsed = isCollapsed;
+                final boolean[] dismissScheduled = { false };
                 // The JS protects against multiple calls, so this should happen only when
                 // closeDialog() is called by other native code.
                 if (childView == null) {
                     return;
                 }
 
+                if (closingFromCollapsed) {
+                    if (main != null) {
+                        main.animate().cancel();
+                        main.setVisibility(View.GONE);
+                        main.setAlpha(1f);
+                        main.setTranslationY(0f);
+                    }
+                    if (collapsedBar != null) {
+                        collapsedBar.animate().cancel();
+                        collapsedBar.setVisibility(View.VISIBLE);
+                        collapsedBar.setAlpha(1f);
+                        collapsedBar.setTranslationY(0f);
+                    }
+                } else {
+                    resetCollapsedBrowserState(true);
+                }
+
+                final Runnable finishDismiss = () -> {
+                    if (dismissScheduled[0]) {
+                        return;
+                    }
+                    dismissScheduled[0] = true;
+
+                    if (dialog != null && !cordova.getActivity().isFinishing()) {
+                        dialog.dismiss(animated);
+                        dialog = null;
+                    }
+                    onBackPressedCallback.setEnabled(false);
+                    resetCollapsedBrowserState(false);
+                };
+
                 childView.setWebViewClient(new WebViewClient() {
                     // NB: wait for about:blank before dismissing
                     public void onPageFinished(WebView view, String url) {
-                        if (dialog != null && !cordova.getActivity().isFinishing()) {
-                            dialog.dismiss(animated);
-                            dialog = null;
-                            onBackPressedCallback.setEnabled(false);
-                        }
+                        finishDismiss.run();
+                    }
+
+                    @Override
+                    public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+                        finishDismiss.run();
                     }
                 });
                 // NB: From SDK 19: "If you call methods on WebView from any thread
@@ -641,7 +700,9 @@ public class InAppBrowser extends CordovaPlugin {
                     ((InAppChromeClient) chromeClient).clearPermissionState();
                 }
 
+                childView.stopLoading();
                 childView.loadUrl("about:blank");
+                childView.postDelayed(finishDismiss, 250);
 
                 try {
                     JSONObject obj = new JSONObject();
@@ -698,6 +759,8 @@ public class InAppBrowser extends CordovaPlugin {
      * @param url to load
      */
     private void navigate(String url) {
+        currentBrowserUrl = url;
+        resetCollapsedIcon();
         if (!url.startsWith("http") && !url.startsWith("file:")) {
             this.inAppWebView.loadUrl("http://" + url);
         } else {
@@ -734,8 +797,272 @@ public class InAppBrowser extends CordovaPlugin {
         );
     }
 
+    private boolean isDarkTheme() {
+        if (theme.equals("system")) {
+            int currentNightMode = cordova.getActivity().getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+            return currentNightMode == Configuration.UI_MODE_NIGHT_YES;
+        }
+
+        return theme.equals("dark");
+    }
+
+    private int resolveBorderlessButtonBackground() {
+        TypedValue typedValue = new TypedValue();
+        cordova.getActivity().getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, typedValue, true);
+        return typedValue.resourceId;
+    }
+
+    private Drawable getToolbarDrawable(String drawableName, int tintColor) {
+        Resources activityRes = cordova.getActivity().getResources();
+        int drawableResId = activityRes.getIdentifier(drawableName, "drawable", cordova.getActivity().getPackageName());
+        if (drawableResId == 0) {
+            return null;
+        }
+        Drawable drawable = ContextCompat.getDrawable(cordova.getActivity(), drawableResId);
+        if (drawable == null) {
+            return null;
+        }
+
+        Drawable wrappedDrawable = DrawableCompat.wrap(drawable.mutate());
+        DrawableCompat.setTint(wrappedDrawable, tintColor);
+        return wrappedDrawable;
+    }
+
+    private void setToolbarButtonIcon(ImageButton button, String drawableName, int tintColor) {
+        if (button == null) {
+            return;
+        }
+
+        Drawable drawable = getToolbarDrawable(drawableName, tintColor);
+        if (drawable != null) {
+            button.setImageDrawable(drawable);
+        }
+        button.setColorFilter(tintColor);
+    }
+
+    private void updateBackButtonAppearance() {
+        if (backButton == null) {
+            return;
+        }
+
+        int tintColor = parseColor(isDarkTheme() ? "#8799B3" : "#8399AE");
+        boolean canNavigateBack = canGoBack();
+        setToolbarButtonIcon(backButton, canNavigateBack ? "ic_action_previous_item" : "ic_action_close", tintColor);
+        backButton.setContentDescription(canNavigateBack ? "Back Button" : "Close Button");
+    }
+
+    private void refreshNavigationState(String url) {
+        if (url != null && !url.isEmpty()) {
+            currentBrowserUrl = url;
+        }
+
+        if (backButton != null) {
+            backButton.post(this::updateBackButtonAppearance);
+        } else {
+            updateBackButtonAppearance();
+        }
+    }
+
     private boolean hasUrlMenu() {
         return urlMenu != null && !urlMenu.isEmpty();
+    }
+
+    private String getUrlHost(String url) {
+        if (url == null || url.isEmpty()) {
+            return "";
+        }
+
+        try {
+            Uri uri = Uri.parse(url);
+            String host = uri.getHost();
+            return host != null ? host : url;
+        } catch (Exception ignored) {
+            return url;
+        }
+    }
+
+    private String normalizeCollapsedTitle(CharSequence titleText) {
+        String normalized = titleText != null ? titleText.toString().trim() : "";
+        if (!normalized.isEmpty()) {
+            return normalized;
+        }
+
+        if (title != null && !title.isEmpty()) {
+            return title;
+        }
+
+        return getUrlHost(currentBrowserUrl);
+    }
+
+    private void updateCollapsedTitle(CharSequence newTitle) {
+        currentCollapsedTitle = normalizeCollapsedTitle(newTitle);
+        if (collapsedTitleTextView != null) {
+            collapsedTitleTextView.setText(currentCollapsedTitle);
+        }
+    }
+
+    private void updateCollapsedIcon(Bitmap icon) {
+        currentPageIcon = icon;
+
+        if (collapsedIconView == null) {
+            return;
+        }
+
+        if (icon == null) {
+            collapsedIconView.setImageDrawable(null);
+            collapsedIconView.setVisibility(View.GONE);
+            return;
+        }
+
+        collapsedIconView.setImageBitmap(icon);
+        collapsedIconView.setVisibility(View.VISIBLE);
+    }
+
+    private void resetCollapsedIcon() {
+        updateCollapsedIcon(null);
+    }
+
+    private void updateCollapsedBarLayout() {
+        if (collapsedBar == null) {
+            return;
+        }
+
+        View rootView = cordova.getActivity().getWindow().getDecorView().getRootView();
+        int rootWidth = rootView != null && rootView.getWidth() > 0
+            ? rootView.getWidth()
+            : cordova.getActivity().getResources().getDisplayMetrics().widthPixels;
+        int horizontalMargin = dpToPixels(COLLAPSED_BAR_HORIZONTAL_MARGIN);
+        int maxWidth = dpToPixels(COLLAPSED_BAR_MAX_WIDTH);
+        int width = Math.min(maxWidth, Math.max(rootWidth - horizontalMargin * 2, 0));
+
+        FrameLayout.LayoutParams layoutParams = collapsedBar.getLayoutParams() instanceof FrameLayout.LayoutParams
+            ? (FrameLayout.LayoutParams) collapsedBar.getLayoutParams()
+            : new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        layoutParams.width = width > 0 ? width : maxWidth;
+        layoutParams.height = dpToPixels(COLLAPSED_BAR_HEIGHT);
+        layoutParams.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        layoutParams.leftMargin = horizontalMargin;
+        layoutParams.rightMargin = horizontalMargin;
+        layoutParams.bottomMargin = currentSystemBottomInset + dpToPixels(COLLAPSED_BAR_BOTTOM_OFFSET);
+        collapsedBar.setLayoutParams(layoutParams);
+    }
+
+    private void updateDialogDisplayMode() {
+        if (dialog != null) {
+            dialog.setCollapsed(isCollapsed);
+        }
+    }
+
+    private void updateBackPressedHandlerState() {
+        onBackPressedCallback.setEnabled(dialog != null && dialog.isVisible && !isCollapsed);
+    }
+
+    private void collapseBrowser() {
+        if (isCollapsed || main == null || collapsedBar == null) {
+            return;
+        }
+
+        isCollapsed = true;
+        updateCollapsedTitle(titleTextView != null ? titleTextView.getText() : null);
+        updateCollapsedBarLayout();
+        contentRoot.bringChildToFront(collapsedBar);
+        collapsedBar.animate().cancel();
+        main.animate().cancel();
+
+        if (!animated) {
+            main.setVisibility(View.GONE);
+            collapsedBar.setAlpha(1f);
+            collapsedBar.setTranslationY(0f);
+            collapsedBar.setVisibility(View.VISIBLE);
+            updateDialogDisplayMode();
+            updateBackPressedHandlerState();
+            return;
+        }
+
+        collapsedBar.setVisibility(View.VISIBLE);
+        collapsedBar.setAlpha(0f);
+        collapsedBar.setTranslationY(dpToPixels(12));
+        collapsedBar.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setDuration(150)
+            .setListener(null)
+            .start();
+
+        main.animate()
+            .alpha(0f)
+            .translationY(dpToPixels(12))
+            .setDuration(150)
+            .withEndAction(() -> {
+                main.setVisibility(View.GONE);
+                main.setAlpha(1f);
+                main.setTranslationY(0f);
+                updateDialogDisplayMode();
+                updateBackPressedHandlerState();
+            })
+            .start();
+    }
+
+    private void expandCollapsedBrowser() {
+        if (!isCollapsed || main == null || collapsedBar == null) {
+            return;
+        }
+
+        isCollapsed = false;
+        updateDialogDisplayMode();
+        updateBackPressedHandlerState();
+        collapsedBar.animate().cancel();
+        main.animate().cancel();
+        main.setVisibility(View.VISIBLE);
+
+        if (!animated) {
+            collapsedBar.setVisibility(View.GONE);
+            collapsedBar.setAlpha(1f);
+            collapsedBar.setTranslationY(0f);
+            return;
+        }
+
+        main.setAlpha(0f);
+        main.setTranslationY(dpToPixels(12));
+        main.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setDuration(150)
+            .setListener(null)
+            .start();
+
+        collapsedBar.animate()
+            .alpha(0f)
+            .translationY(dpToPixels(12))
+            .setDuration(150)
+            .withEndAction(() -> {
+                collapsedBar.setVisibility(View.GONE);
+                collapsedBar.setAlpha(1f);
+                collapsedBar.setTranslationY(0f);
+            })
+            .start();
+    }
+
+    private void resetCollapsedBrowserState(boolean restoreMain) {
+        isCollapsed = false;
+        updateDialogDisplayMode();
+        updateBackPressedHandlerState();
+
+        if (collapsedBar != null) {
+            collapsedBar.animate().cancel();
+            collapsedBar.setVisibility(View.GONE);
+            collapsedBar.setAlpha(1f);
+            collapsedBar.setTranslationY(0f);
+        }
+
+        if (main != null) {
+            main.animate().cancel();
+            main.setAlpha(1f);
+            main.setTranslationY(0f);
+            if (restoreMain) {
+                main.setVisibility(View.VISIBLE);
+            }
+        }
     }
 
     /**
@@ -854,29 +1181,35 @@ public class InAppBrowser extends CordovaPlugin {
             loadedOnce = false;
         }
 
+        currentBrowserUrl = url;
+        currentPageIcon = null;
+        currentSystemBottomInset = 0;
+        updateCollapsedTitle(title);
+        resetCollapsedBrowserState(false);
+
         final CordovaWebView thatWebView = this.webView;
 
         // Create dialog in new thread
         Runnable runnable = new Runnable() {
             private LinearLayout createTitleView() {
                 LinearLayout titleView = new LinearLayout(cordova.getContext());
-                RelativeLayout.LayoutParams titleLayoutParams = new RelativeLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
-                titleLayoutParams.addRule(RelativeLayout.CENTER_IN_PARENT);
-                titleView.setLayoutParams(titleLayoutParams);
                 titleView.setOrientation(LinearLayout.VERTICAL);
-                titleView.setGravity(Gravity.CENTER_HORIZONTAL);
+                titleView.setGravity((leftToRight ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL);
                 titleView.setId(Integer.valueOf(4));
                 titleTextView = new TextView(cordova.getActivity());
-                titleTextView.setGravity(Gravity.CENTER_HORIZONTAL);
-                titleTextView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
+                titleTextView.setGravity((leftToRight ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL);
+                titleTextView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
                 titleTextView.setTypeface(null, Typeface.BOLD);
+                titleTextView.setIncludeFontPadding(false);
                 titleTextView.setSingleLine();
                 titleTextView.setEllipsize(TextUtils.TruncateAt.MARQUEE);
                 titleTextView.setHorizontalFadingEdgeEnabled(true);
                 titleTextView.setSelected(true);
                 titleTextView.setText(title + (hasUrlMenu() ? " " : ""));
+                updateCollapsedTitle(titleTextView.getText());
                 if (hasUrlMenu()) {
-                    arrowDrawable = ContextCompat.getDrawable(cordova.getContext(), R.drawable.ic_arrow_bottom_8);
+                    int arrowTintColor = parseColor(isDarkTheme() ? "#FFFFFF" : "#000000");
+                    arrowDrawable = getToolbarDrawable("ic_arrow_bottom_8", arrowTintColor);
                     if (arrowDrawable != null) {
                         int padding = dpToPixels(1.66f);
                         arrowDrawable.setBounds(0, padding, arrowDrawable.getIntrinsicWidth(), arrowDrawable.getIntrinsicHeight() + padding);
@@ -887,35 +1220,52 @@ public class InAppBrowser extends CordovaPlugin {
                 titleView.addView(titleTextView);
                 LinearLayout.LayoutParams lp =
                     new LinearLayout.LayoutParams(
-                        LayoutParams.WRAP_CONTENT,
+                        LayoutParams.MATCH_PARENT,
                         LayoutParams.WRAP_CONTENT
                     );
                 titleTextView.setLayoutParams(lp);
                 subtitleTextView = new TextView(cordova.getActivity());
-                subtitleTextView.setGravity(Gravity.CENTER);
-                subtitleTextView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-                subtitleTextView.setTypeface(null, Typeface.BOLD);
+                subtitleTextView.setGravity((leftToRight ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL);
+                subtitleTextView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                subtitleTextView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+                subtitleTextView.setIncludeFontPadding(false);
                 subtitleTextView.setSingleLine();
                 subtitleTextView.setEllipsize(TextUtils.TruncateAt.MARQUEE);
                 subtitleTextView.setHorizontalFadingEdgeEnabled(true);
                 subtitleTextView.setSelected(true);
                 subtitleTextView.setText(subtitle);
                 subtitleTextView.setVisibility(subtitle.isEmpty() || hasUrlMenu() ? View.GONE : View.VISIBLE);
+                LinearLayout.LayoutParams subtitleLayoutParams =
+                    new LinearLayout.LayoutParams(
+                        LayoutParams.MATCH_PARENT,
+                        LayoutParams.WRAP_CONTENT
+                    );
+                subtitleLayoutParams.topMargin = dpToPixels(2);
+                subtitleTextView.setLayoutParams(subtitleLayoutParams);
                 titleView.addView(subtitleTextView);
                 return titleView;
             }
 
+            private ImageButton createToolbarActionButton(String drawableName, String contentDescription) {
+                ImageButton button = new ImageButton(cordova.getActivity());
+                button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+                button.setPadding(
+                    dpToPixels(TOOLBAR_BUTTON_PADDING),
+                    dpToPixels(TOOLBAR_BUTTON_PADDING),
+                    dpToPixels(TOOLBAR_BUTTON_PADDING),
+                    dpToPixels(TOOLBAR_BUTTON_PADDING)
+                );
+                button.setBackgroundResource(resolveBorderlessButtonBackground());
+                button.setContentDescription(contentDescription);
+                button.setLayoutParams(new RelativeLayout.LayoutParams(dpToPixels(TOOLBAR_BUTTON_SIZE), dpToPixels(TOOLBAR_BUTTON_SIZE)));
+                int defaultTint = parseColor(isDarkTheme() ? "#8799B3" : "#8399AE");
+                setToolbarButtonIcon(button, drawableName, defaultTint);
+                return button;
+            }
+
             private ImageButton createMoreButton() {
-                ImageButton moreButton = new ImageButton(cordova.getActivity());
-                LinearLayout.LayoutParams layoutParams = new LinearLayout.LayoutParams(dpToPixels(32), dpToPixels(32));
-                moreButton.setLayoutParams(layoutParams);
-                moreButton.setContentDescription("More Button");
+                ImageButton moreButton = createToolbarActionButton("ic_action_more", "More Button");
                 moreButton.setId(Integer.valueOf(3));
-                Resources activityRes = cordova.getActivity().getResources();
-                int moreResId = activityRes.getIdentifier("ic_action_more", "drawable", cordova.getActivity().getPackageName());
-                Drawable moreIcon = activityRes.getDrawable(moreResId);
-                moreButton.setImageDrawable(moreIcon);
-                moreButton.setBackground(null);
 
                 moreButton.setOnClickListener(v -> {
                     PopupMenu popup = new PopupMenu(cordova.getContext(), moreButton);
@@ -958,48 +1308,86 @@ public class InAppBrowser extends CordovaPlugin {
                 return moreButton;
             }
 
-            private View createBackButton(int id) {
-                Resources activityRes = cordova.getContext().getResources();
-                Button back = new Button(cordova.getActivity());
-                back.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
-                back.setTextColor(parseColor("#0088CC"));
-                back.setText(backButtonCaption);
-                back.setAllCaps(false);
-                int backResId = activityRes.getIdentifier("ic_action_previous_item", "drawable", cordova.getActivity().getPackageName());
-                Drawable backIcon = activityRes.getDrawable(backResId);
-                Drawable wrappedIcon = DrawableCompat.wrap(backIcon);
-                int textColor = back.getCurrentTextColor();
-                DrawableCompat.setTint(wrappedIcon, textColor);
-                back.setCompoundDrawablesWithIntrinsicBounds(wrappedIcon, null, null, null);
+            private ImageButton createCollapseButton() {
+                ImageButton button = createToolbarActionButton("ic_arrow_up_24", "Collapse Button");
+                button.setRotation(180f);
+                button.setOnClickListener(v -> collapseBrowser());
+                return button;
+            }
 
-                RelativeLayout.LayoutParams closeLayoutParams = new RelativeLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT);
-                if (leftToRight) closeLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
-                else closeLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
-                back.setLayoutParams(closeLayoutParams);
-                back.setBackground(null);
+            private ImageButton createCollapsedActionButton(String drawableName, String contentDescription, View.OnClickListener onClickListener) {
+                ImageButton button = createToolbarActionButton(drawableName, contentDescription);
+                LinearLayout.LayoutParams layoutParams = new LinearLayout.LayoutParams(dpToPixels(40), dpToPixels(40));
+                button.setLayoutParams(layoutParams);
+                button.setOnClickListener(onClickListener);
+                return button;
+            }
 
-                back.setContentDescription("Close Button");
+            private LinearLayout createCollapsedBar() {
+                LinearLayout bar = new LinearLayout(cordova.getActivity());
+                bar.setOrientation(LinearLayout.HORIZONTAL);
+                bar.setGravity(Gravity.CENTER_VERTICAL);
+                bar.setPadding(dpToPixels(4), dpToPixels(4), dpToPixels(4), dpToPixels(4));
+                bar.setVisibility(View.GONE);
+                bar.setAlpha(0f);
+                bar.setElevation(dpToPixels(6));
+                collapsedBarBackground = new GradientDrawable();
+                collapsedBarBackground.setCornerRadius(dpToPixels(COLLAPSED_BAR_HEIGHT / 2f));
+                bar.setBackground(collapsedBarBackground);
+
+                collapsedCloseButton = createCollapsedActionButton(
+                    "ic_action_close",
+                    "Close Browser",
+                    v -> closeDialog()
+                );
+                bar.addView(collapsedCloseButton);
+
+                collapsedIconView = new ImageView(cordova.getActivity());
+                LinearLayout.LayoutParams iconLayoutParams = new LinearLayout.LayoutParams(dpToPixels(24), dpToPixels(24));
+                iconLayoutParams.rightMargin = dpToPixels(8);
+                collapsedIconView.setLayoutParams(iconLayoutParams);
+                collapsedIconView.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                collapsedIconView.setVisibility(View.GONE);
+                bar.addView(collapsedIconView);
+
+                collapsedTitleTextView = new TextView(cordova.getActivity());
+                LinearLayout.LayoutParams titleLayoutParams = new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f);
+                collapsedTitleTextView.setLayoutParams(titleLayoutParams);
+                collapsedTitleTextView.setGravity(Gravity.CENTER_VERTICAL);
+                collapsedTitleTextView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+                collapsedTitleTextView.setTypeface(null, Typeface.BOLD);
+                collapsedTitleTextView.setSingleLine();
+                collapsedTitleTextView.setEllipsize(TextUtils.TruncateAt.END);
+                collapsedTitleTextView.setText(currentCollapsedTitle);
+                bar.addView(collapsedTitleTextView);
+
+                collapsedExpandButton = createCollapsedActionButton(
+                    "ic_arrow_up_24",
+                    "Expand Browser",
+                    v -> expandCollapsedBrowser()
+                );
+                bar.addView(collapsedExpandButton);
+
+                bar.setOnClickListener(v -> expandCollapsedBrowser());
+                updateCollapsedIcon(currentPageIcon);
+                return bar;
+            }
+
+            private ImageButton createBackButton(int id) {
+                ImageButton back = createToolbarActionButton("ic_action_close", "Close Button");
                 back.setId(Integer.valueOf(id));
-                back.setOnClickListener(v -> goBack());
-
+                back.setOnClickListener(v -> {
+                    if (canGoBack()) {
+                        goBack();
+                    } else {
+                        closeDialog();
+                    }
+                });
                 return back;
             }
 
-            private View createActionsSeparatorView() {
-                View separatorView = new View(cordova.getActivity());
-                LinearLayout.LayoutParams layoutParams = new LinearLayout.LayoutParams(1, dpToPixels(20));
-                separatorView.setLayoutParams(layoutParams);
-                separatorView.setAlpha(0.3f);
-                return separatorView;
-            }
-
             private ImageButton createCloseButton() {
-                Resources activityRes = cordova.getActivity().getResources();
-                ImageButton close = new ImageButton(cordova.getActivity());
-                int closeResId = activityRes.getIdentifier("ic_action_close", "drawable", cordova.getActivity().getPackageName());
-                Drawable closeIcon = activityRes.getDrawable(closeResId);
-                close.setImageDrawable(closeIcon);
-                close.setBackground(null);
+                ImageButton close = createToolbarActionButton("ic_action_close", "Close Button");
                 close.setContentDescription("Close Button");
                 close.setOnClickListener(v -> {
                     closeDialog();
@@ -1019,15 +1407,19 @@ public class InAppBrowser extends CordovaPlugin {
                 // Let's create the main dialog
                 dialog = new InAppBrowserDialog(cordova.getActivity());
 
+                contentRoot = new FrameLayout(cordova.getActivity());
+                contentRoot.setLayoutParams(new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+
                 // Main container layout
                 main = new LinearLayout(cordova.getActivity());
                 main.setOrientation(LinearLayout.VERTICAL);
+                main.setLayoutParams(new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
 
                 // Toolbar layout
                 toolbar = new RelativeLayout(cordova.getActivity());
                 toolbar.setOnTouchListener((v, event) -> true);
                 toolbar.setLayoutParams(new RelativeLayout.LayoutParams(LayoutParams.MATCH_PARENT, dpToPixels(TOOLBAR_HEIGHT)));
-                toolbar.setPadding(dpToPixels(2), dpToPixels(2), dpToPixels(2), dpToPixels(2));
+                toolbar.setPadding(0, 0, 0, 0);
                 if (leftToRight) {
                     toolbar.setHorizontalGravity(Gravity.LEFT);
                 } else {
@@ -1035,31 +1427,67 @@ public class InAppBrowser extends CordovaPlugin {
                 }
                 toolbar.setVerticalGravity(Gravity.TOP);
 
-                // Action Button Container layout
-                LinearLayout actionButtonContainer = new LinearLayout(cordova.getActivity());
-                RelativeLayout.LayoutParams actionButtonLayoutParams = new RelativeLayout.LayoutParams(dpToPixels(64), dpToPixels(32));
-                if (leftToRight)
-                    actionButtonLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
-                else actionButtonLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
-                actionButtonLayoutParams.addRule(RelativeLayout.CENTER_VERTICAL);
-                if (leftToRight)
-                    actionButtonLayoutParams.rightMargin = dpToPixels(16);
-                else
-                    actionButtonLayoutParams.leftMargin = dpToPixels(16);
-                actionButtonContainer.setLayoutParams(actionButtonLayoutParams);
-                actionButtonContainer.setVerticalGravity(Gravity.CENTER_VERTICAL);
-                actionButtonContainer.setId(leftToRight ? Integer.valueOf(5) : Integer.valueOf(1));
-                actionButtonContainerBackground = new GradientDrawable();
-                actionButtonContainerBackground.setCornerRadius(dpToPixels(16));
-                actionButtonContainer.setBackground(actionButtonContainerBackground);
+                // Header Close/Done button
+                int backButtonId = leftToRight ? 1 : 5;
+                int collapseButtonId = leftToRight ? 5 : 1;
+                backButton = createBackButton(backButtonId);
+                RelativeLayout.LayoutParams backButtonLayoutParams =
+                    new RelativeLayout.LayoutParams(dpToPixels(TOOLBAR_BUTTON_SIZE), dpToPixels(TOOLBAR_BUTTON_SIZE));
+                backButtonLayoutParams.addRule(RelativeLayout.CENTER_VERTICAL);
+                if (leftToRight) {
+                    backButtonLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
+                    backButtonLayoutParams.leftMargin = dpToPixels(TOOLBAR_HORIZONTAL_MARGIN);
+                } else {
+                    backButtonLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
+                    backButtonLayoutParams.rightMargin = dpToPixels(TOOLBAR_HORIZONTAL_MARGIN);
+                }
+                backButton.setLayoutParams(backButtonLayoutParams);
+                toolbar.addView(backButton);
+
+                moreButton = createMoreButton();
+                RelativeLayout.LayoutParams moreButtonLayoutParams =
+                    new RelativeLayout.LayoutParams(dpToPixels(TOOLBAR_BUTTON_SIZE), dpToPixels(TOOLBAR_BUTTON_SIZE));
+                moreButtonLayoutParams.addRule(RelativeLayout.CENTER_VERTICAL);
+                if (leftToRight) {
+                    moreButtonLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
+                    moreButtonLayoutParams.rightMargin = dpToPixels(TOOLBAR_HORIZONTAL_MARGIN);
+                } else {
+                    moreButtonLayoutParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
+                    moreButtonLayoutParams.leftMargin = dpToPixels(TOOLBAR_HORIZONTAL_MARGIN);
+                }
+                moreButton.setLayoutParams(moreButtonLayoutParams);
+                toolbar.addView(moreButton);
+
+                collapseButton = createCollapseButton();
+                collapseButton.setId(Integer.valueOf(collapseButtonId));
+                RelativeLayout.LayoutParams collapseButtonLayoutParams =
+                    new RelativeLayout.LayoutParams(dpToPixels(TOOLBAR_BUTTON_SIZE), dpToPixels(TOOLBAR_BUTTON_SIZE));
+                collapseButtonLayoutParams.addRule(RelativeLayout.CENTER_VERTICAL);
+                if (leftToRight) {
+                    collapseButtonLayoutParams.addRule(RelativeLayout.LEFT_OF, moreButton.getId());
+                    collapseButtonLayoutParams.rightMargin = dpToPixels(TOOLBAR_BUTTON_SPACING);
+                } else {
+                    collapseButtonLayoutParams.addRule(RelativeLayout.RIGHT_OF, moreButton.getId());
+                    collapseButtonLayoutParams.leftMargin = dpToPixels(TOOLBAR_BUTTON_SPACING);
+                }
+                collapseButton.setLayoutParams(collapseButtonLayoutParams);
+                toolbar.addView(collapseButton);
 
                 // Title view
                 LinearLayout titleView = createTitleView();
-
-                // Header Close/Done button
-                int backButtonId = leftToRight ? 1 : 5;
-                backView = createBackButton(backButtonId);
-                toolbar.addView(backView);
+                RelativeLayout.LayoutParams titleLayoutParams =
+                    new RelativeLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+                titleLayoutParams.addRule(RelativeLayout.CENTER_VERTICAL);
+                if (leftToRight) {
+                    titleLayoutParams.addRule(RelativeLayout.RIGHT_OF, backButtonId);
+                    titleLayoutParams.addRule(RelativeLayout.LEFT_OF, collapseButtonId);
+                } else {
+                    titleLayoutParams.addRule(RelativeLayout.LEFT_OF, backButtonId);
+                    titleLayoutParams.addRule(RelativeLayout.RIGHT_OF, collapseButtonId);
+                }
+                titleLayoutParams.leftMargin = dpToPixels(TOOLBAR_TITLE_SPACING);
+                titleLayoutParams.rightMargin = dpToPixels(TOOLBAR_TITLE_SPACING);
+                titleView.setLayoutParams(titleLayoutParams);
 
                 // Footer
                 RelativeLayout footer = new RelativeLayout(cordova.getActivity());
@@ -1096,6 +1524,12 @@ public class InAppBrowser extends CordovaPlugin {
                             fadeTextView(titleTextView, view.getTitle());
                             fadeTextView(subtitleTextView, titleTextView.getText().toString());
                         }
+                    }
+
+                    @Override
+                    public void onReceivedIcon(WebView view, Bitmap icon) {
+                        super.onReceivedIcon(view, icon);
+                        updateCollapsedIcon(icon);
                     }
 
                     public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams) {
@@ -1212,16 +1646,7 @@ public class InAppBrowser extends CordovaPlugin {
                 inAppWebView.requestFocus();
                 inAppWebView.requestFocusFromTouch();
 
-                // Add more and close buttons to our action button container layout
-                moreButton = createMoreButton();
-                actionsSeparatorView = createActionsSeparatorView();
-                closeButton = createCloseButton();
-                actionButtonContainer.addView(moreButton);
-                actionButtonContainer.addView(actionsSeparatorView);
-                actionButtonContainer.addView(closeButton);
-
                 // Add the views to our toolbar if they haven't been disabled
-                toolbar.addView(actionButtonContainer);
                 if (!hideUrlBar) toolbar.addView(titleView);
 
                 // Don't add the toolbar if its been disabled
@@ -1240,21 +1665,30 @@ public class InAppBrowser extends CordovaPlugin {
                     webViewLayout.addView(footer);
                 }
 
+                collapsedBar = createCollapsedBar();
+                updateCollapsedBarLayout();
+                contentRoot.addView(main);
+                contentRoot.addView(collapsedBar);
+
                 if (dialog != null) {
                     updateTheme();
-                    dialog.setContentView(main);
+                    dialog.setContentView(contentRoot);
                     dialog.show(animated);
-                    onBackPressedCallback.setEnabled(true);
+                    updateDialogDisplayMode();
+                    updateBackPressedHandlerState();
                     View rootView = dialog.getView();
                     ViewCompat.setOnApplyWindowInsetsListener(rootView, (v, insets) -> {
                         Insets systemBars = insets.getInsets(
                             WindowInsetsCompat.Type.displayCutout() |
                                 WindowInsetsCompat.Type.systemBars()
                         );
+                        currentSystemBottomInset = systemBars.bottom;
                         main.setPadding(0, systemBars.top, 0, systemBars.bottom);
+                        updateCollapsedBarLayout();
 
                         return insets;
                     });
+                    rootView.post(InAppBrowser.this::updateCollapsedBarLayout);
                 }
                 // the goal of openhidden is to load the url and not display it
                 // Show() needs to be called to cause the URL to be loaded
@@ -1262,12 +1696,6 @@ public class InAppBrowser extends CordovaPlugin {
                     dialog.hide();
                     onBackPressedCallback.setEnabled(false);
                 }
-
-                main.post(() -> {
-                    ViewGroup.MarginLayoutParams titleLayoutParams = (ViewGroup.MarginLayoutParams) titleView.getLayoutParams();
-                    int horizontalMargin = Math.max(backView.getMeasuredWidth(), actionButtonContainer.getMeasuredWidth());
-                    titleLayoutParams.width = titleView.getMeasuredWidth() - 2 * horizontalMargin;
-                });
             }
         };
         this.cordova.getActivity().runOnUiThread(runnable);
@@ -1282,26 +1710,29 @@ public class InAppBrowser extends CordovaPlugin {
     }
 
     private void updateTheme() {
-        boolean isDark;
-        if (theme.equals("system")) {
-            int currentNightMode = cordova.getActivity().getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
-            isDark = currentNightMode == Configuration.UI_MODE_NIGHT_YES;
-        } else {
-            isDark = theme.equals("dark");
-        }
+        boolean isDark = isDarkTheme();
         int backgroundColor = parseColor(isDark ? "#151C24" : "#F1F5FA");
-        int color = isDark ? Color.WHITE : Color.BLACK;
-        int secondaryColor = isDark ? Color.WHITE : parseColor("#FF8399AE");
+        int color = parseColor(isDark ? "#FFFFFF" : "#000000");
+        int secondaryColor = parseColor(isDark ? "#8799B3" : "#8399AE");
         int actionsColor = parseColor(isDark ? "#8799B3" : "#8399AE");
         titleTextView.setTextColor(color);
         if (arrowDrawable != null)
             arrowDrawable.setTint(color);
         subtitleTextView.setTextColor(secondaryColor);
         main.setBackgroundColor(backgroundColor);
-        closeButton.setColorFilter(actionsColor);
-        actionsSeparatorView.setBackgroundColor(actionsColor);
-        moreButton.setColorFilter(actionsColor);
-        actionButtonContainerBackground.setColor(parseColor(isDark ? "#1E2732" : "#E6ECF2"));
+        toolbar.setBackgroundColor(Color.TRANSPARENT);
+        updateBackButtonAppearance();
+        setToolbarButtonIcon(collapseButton, "ic_arrow_up_24", actionsColor);
+        if (collapseButton != null) {
+            collapseButton.setRotation(180f);
+        }
+        setToolbarButtonIcon(moreButton, "ic_action_more", actionsColor);
+        if (collapsedTitleTextView != null)
+            collapsedTitleTextView.setTextColor(color);
+        setToolbarButtonIcon(collapsedCloseButton, "ic_action_close", actionsColor);
+        setToolbarButtonIcon(collapsedExpandButton, "ic_arrow_up_24", actionsColor);
+        if (collapsedBarBackground != null)
+            collapsedBarBackground.setColor(parseColor(isDark ? "#1E2732" : "#E6ECF2"));
 
         updateStatusBarStyle(isDark);
     }
@@ -1478,6 +1909,7 @@ public class InAppBrowser extends CordovaPlugin {
         popup.setOnItemClickListener((parent, view, position, id) -> {
             Pair<String, String> entry = urlMenu.get(position);
             fadeTextView(titleTextView, entry.first + " ");
+            resetCollapsedIcon();
             inAppWebView.loadUrl("about:blank");
             inAppWebView.post(() -> navigate(entry.second));
             onMenuItemSelectedCallback(entry);
@@ -1509,6 +1941,9 @@ public class InAppBrowser extends CordovaPlugin {
     private void fadeTextView(final TextView textView, final CharSequence newText) {
         if (textView.getText().equals(newText))
             return;
+        if (textView == titleTextView) {
+            updateCollapsedTitle(newText);
+        }
         ObjectAnimator fadeOut = ObjectAnimator.ofFloat(textView, "alpha", 1f, 0f).setDuration(300);
         fadeOut.addListener(new AnimatorListenerAdapter() {
             @Override
@@ -1765,6 +2200,7 @@ public class InAppBrowser extends CordovaPlugin {
         @Override
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
             super.onPageStarted(view, url, favicon);
+            resetCollapsedIcon();
 
             if (!preloadCode.isEmpty())
                 view.evaluateJavascript(preloadCode, null);
@@ -1778,6 +2214,7 @@ public class InAppBrowser extends CordovaPlugin {
                 LOG.e(LOG_TAG, "Possible Uncaught/Unknown URI");
                 newloc = "http://" + url;
             }
+            refreshNavigationState(newloc);
 
             try {
                 JSONObject obj = new JSONObject();
@@ -1807,6 +2244,8 @@ public class InAppBrowser extends CordovaPlugin {
                 shouldClearHistory = false;
             }
 
+            refreshNavigationState(url);
+
             try {
                 JSONObject obj = new JSONObject();
                 obj.put("type", LOAD_STOP_EVENT);
@@ -1816,6 +2255,12 @@ public class InAppBrowser extends CordovaPlugin {
             } catch (JSONException ex) {
                 LOG.d(LOG_TAG, "Should never happen");
             }
+        }
+
+        @Override
+        public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
+            super.doUpdateVisitedHistory(view, url, isReload);
+            refreshNavigationState(url);
         }
 
         public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {

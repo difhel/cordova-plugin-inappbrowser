@@ -25,6 +25,19 @@ const isBrowser = cordova.platformId === 'browser';
 window.alert = window.alert || navigator.notification.alert;
 
 exports.defineAutoTests = function () {
+    if (isBrowser && window.PARAMEDIC && !window.__cdvtestsExitHookInstalled) {
+        window.__cdvtestsExitHookInstalled = true;
+        jasmine.getEnv().addReporter({
+            jasmineDone: function () {
+                try {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('GET', `${window.location.origin}/__cordova_paramedic_exit`, true);
+                    xhr.send(null);
+                } catch (e) {}
+            }
+        });
+    }
+
     const createTests = function (platformOpts) {
         platformOpts = platformOpts || '';
 
@@ -115,8 +128,11 @@ exports.defineAutoTests = function () {
             });
 
             it('inappbrowser.spec.5 should support exit event', function (done) {
+                let didHandleExit = false;
                 iabInstance = cordova.InAppBrowser.open(url, '_blank', platformOpts);
                 iabInstance.addEventListener('exit', function (evt) {
+                    if (didHandleExit) return;
+                    didHandleExit = true;
                     verifyEvent(evt, 'exit');
                     done();
                 });
@@ -163,7 +179,16 @@ exports.defineAutoTests = function () {
                         ': "' +
                         messageValue +
                         '"};\n' +
-                        '    webkit.messageHandlers.cordova_iab.postMessage(JSON.stringify(message));\n' +
+                        '    var payload = JSON.stringify(message);\n' +
+                        '    if (window.cordova_iab && typeof window.cordova_iab.postMessage === "function") {\n' +
+                        '        window.cordova_iab.postMessage(payload);\n' +
+                        '        return;\n' +
+                        '    }\n' +
+                        '    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.cordova_iab && typeof window.webkit.messageHandlers.cordova_iab.postMessage === "function") {\n' +
+                        '        window.webkit.messageHandlers.cordova_iab.postMessage(payload);\n' +
+                        '        return;\n' +
+                        '    }\n' +
+                        '    throw new Error("No InAppBrowser postMessage bridge found");\n' +
                         '})()';
                     iabInstance.executeScript({ code });
                 });

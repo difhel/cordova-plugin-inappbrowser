@@ -1,3 +1,23 @@
+<!--
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+#
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="11dp" android:height="17dp" android:viewportWidth="11" android:viewportHeight="17">
     <path android:fillColor="#FFF"
           android:pathData="M0.944964 8.49264C0.954381 8.16305 1.0768 7.88054 1.33106 7.62629L8.65737 0.460066C8.87395 0.252895 9.12821 0.139893 9.43896 0.139893C10.0699 0.139893 10.5596 0.629569 10.5596 1.2605C10.5596 1.56184 10.4372 1.84434 10.2206 2.06093L3.62877 8.49264L10.2206 14.9244C10.4372 15.1409 10.5596 15.414 10.5596 15.7248C10.5596 16.3557 10.0699 16.8454 9.43896 16.8454C9.13763 16.8454 8.87395 16.7324 8.65737 16.5252L1.33106 9.34957C1.06738 9.10474 0.944964 8.82223 0.944964 8.49264Z" />

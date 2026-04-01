@@ -1,32 +1,53 @@
+/*
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ *
+ */
 package org.apache.cordova.inappbrowser;
 
 import android.content.Context;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Gravity;
 import android.widget.FrameLayout;
 
 public class InAppBrowserDialog {
     private final Context context;
     private final FrameLayout dialogContainer;
+    private View contentView;
     boolean isVisible = false;
 
     public InAppBrowserDialog(Context context) {
         this.context = context;
 
         dialogContainer = new FrameLayout(context);
-        dialogContainer.setLayoutParams(new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-        ));
+        updateDisplayMode(false);
     }
 
     public void setContentView(View contentView) {
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-        );
+        this.contentView = contentView;
         dialogContainer.removeAllViews();
-        dialogContainer.addView(contentView, params);
+        dialogContainer.addView(contentView);
+        updateDisplayMode(false);
+    }
+
+    public void setCollapsed(boolean collapsed) {
+        updateDisplayMode(collapsed);
     }
 
     public void show(Boolean animated) {
@@ -85,6 +106,27 @@ public class InAppBrowserDialog {
 
     public View getView() {
         return dialogContainer;
+    }
+
+    private void updateDisplayMode(boolean collapsed) {
+        int width = collapsed ? ViewGroup.LayoutParams.WRAP_CONTENT : ViewGroup.LayoutParams.MATCH_PARENT;
+        int height = collapsed ? ViewGroup.LayoutParams.WRAP_CONTENT : ViewGroup.LayoutParams.MATCH_PARENT;
+        int gravity = collapsed ? Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL : Gravity.NO_GRAVITY;
+
+        updateLayoutParams(dialogContainer, width, height, gravity);
+        if (contentView != null) {
+            updateLayoutParams(contentView, width, height, gravity);
+        }
+    }
+
+    private void updateLayoutParams(View view, int width, int height, int gravity) {
+        FrameLayout.LayoutParams params = view.getLayoutParams() instanceof FrameLayout.LayoutParams
+                ? (FrameLayout.LayoutParams) view.getLayoutParams()
+                : new FrameLayout.LayoutParams(width, height);
+        params.width = width;
+        params.height = height;
+        params.gravity = gravity;
+        view.setLayoutParams(params);
     }
 
     private float dpToPx(int dp) {
