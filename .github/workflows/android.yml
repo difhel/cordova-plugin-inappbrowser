@@ -116,6 +116,54 @@ jobs:
         if: ${{ endswith(env.repo, '/cordova-paramedic') != true }}
         run: npm i -g github:apache/cordova-paramedic
 
+      - name: Patch paramedic log collection (workaround)
+        if: ${{ endswith(env.repo, '/cordova-paramedic') != true }}
+        run: |
+          export PARAMEDIC_FILE="$(npm root -g)/cordova-paramedic/lib/ParamedicLogCollector.js"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const file = process.env.PARAMEDIC_FILE;
+          if (!file) {
+            console.error('Missing PARAMEDIC_FILE');
+            process.exit(1);
+          }
+          if (!fs.existsSync(file)) {
+            console.error(`Paramedic log collector not found: ${file}`);
+            process.exit(1);
+          }
+          const src = fs.readFileSync(file, 'utf8');
+          if (src.includes('Failed to collect adb logcat')) {
+            console.log(`Paramedic already patched: ${file}`);
+            process.exit(0);
+          }
+          const needle = [
+            "        const content = await spawnAsync(",
+            "            'adb',",
+            "            ['-s', this.targetObj.target, 'logcat', '-d', '-v', 'time']",
+            "        );",
+            ""
+          ].join('\n');
+          const replacement = [
+            '        let content;',
+            '        try {',
+            '            content = await spawnAsync(',
+            "                'adb',",
+            "                ['-s', this.targetObj.target, 'logcat', '-d', '-v', 'time']",
+            '            );',
+            '        } catch (err) {',
+            '            logger.warn(`[paramedic] Failed to collect adb logcat: ${err.message}`);',
+            '            return;',
+            '        }',
+            ''
+          ].join('\n');
+          if (!src.includes(needle)) {
+            console.error(`Expected snippet not found in ${file}; paramedic internals may have changed.`);
+            process.exit(1);
+          }
+          fs.writeFileSync(file, src.replace(needle, replacement));
+          console.log(`Patched paramedic log collector: ${file}`);
+          NODE
+
       - uses: reactivecircus/android-emulator-runner@b530d96654c385303d652368551fb075bc2f0b6b
         env:
           system-image-arch: ${{ matrix.versions.system-image-arch == '' && env.default_system-image-arch || matrix.versions.system-image-arch }}
