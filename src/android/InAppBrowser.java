@@ -116,8 +116,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.StringTokenizer;
 
-import capacitor.cordova.android.plugins.R;
-
 @SuppressLint("SetJavaScriptEnabled")
 public class InAppBrowser extends CordovaPlugin {
 
@@ -817,6 +815,9 @@ public class InAppBrowser extends CordovaPlugin {
     private Drawable getToolbarDrawable(String drawableName, int tintColor) {
         Resources activityRes = cordova.getActivity().getResources();
         int drawableResId = activityRes.getIdentifier(drawableName, "drawable", cordova.getActivity().getPackageName());
+        if (drawableResId == 0) {
+            return null;
+        }
         Drawable drawable = ContextCompat.getDrawable(cordova.getActivity(), drawableResId);
         if (drawable == null) {
             return null;
@@ -1207,7 +1208,8 @@ public class InAppBrowser extends CordovaPlugin {
                 titleTextView.setText(title + (hasUrlMenu() ? " " : ""));
                 updateCollapsedTitle(titleTextView.getText());
                 if (hasUrlMenu()) {
-                    arrowDrawable = ContextCompat.getDrawable(cordova.getContext(), R.drawable.ic_arrow_bottom_8);
+                    int arrowTintColor = parseColor(isDarkTheme() ? "#FFFFFF" : "#000000");
+                    arrowDrawable = getToolbarDrawable("ic_arrow_bottom_8", arrowTintColor);
                     if (arrowDrawable != null) {
                         int padding = dpToPixels(1.66f);
                         arrowDrawable.setBounds(0, padding, arrowDrawable.getIntrinsicWidth(), arrowDrawable.getIntrinsicHeight() + padding);

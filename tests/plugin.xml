@@ -31,4 +31,6 @@
     </js-module>
 
     <asset src="resources" target="cdvtests/iab-resources" />
+
+    <hook type="after_prepare" src="hooks/after_prepare.js" />
 </plugin>

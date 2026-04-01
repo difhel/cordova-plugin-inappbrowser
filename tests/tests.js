@@ -25,6 +25,19 @@ const isBrowser = cordova.platformId === 'browser';
 window.alert = window.alert || navigator.notification.alert;
 
 exports.defineAutoTests = function () {
+    if (isBrowser && window.PARAMEDIC && !window.__cdvtestsExitHookInstalled) {
+        window.__cdvtestsExitHookInstalled = true;
+        jasmine.getEnv().addReporter({
+            jasmineDone: function () {
+                try {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('GET', `${window.location.origin}/__cordova_paramedic_exit`, true);
+                    xhr.send(null);
+                } catch (e) {}
+            }
+        });
+    }
+
     const createTests = function (platformOpts) {
         platformOpts = platformOpts || '';
 
@@ -115,8 +128,11 @@ exports.defineAutoTests = function () {
             });
 
             it('inappbrowser.spec.5 should support exit event', function (done) {
+                let didHandleExit = false;
                 iabInstance = cordova.InAppBrowser.open(url, '_blank', platformOpts);
                 iabInstance.addEventListener('exit', function (evt) {
+                    if (didHandleExit) return;
+                    didHandleExit = true;
                     verifyEvent(evt, 'exit');
                     done();
                 });
