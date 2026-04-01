@@ -82,11 +82,13 @@ jobs:
 
           sudo tee /usr/local/bin/google-chrome >/dev/null <<EOF
           #!/usr/bin/env bash
-          exec "$CHROME_BIN" --no-sandbox --disable-dev-shm-usage "\$@"
+          exec "$CHROME_BIN" --no-sandbox --disable-dev-shm-usage --disable-gpu --no-first-run --no-default-browser-check --disable-background-networking --disable-popup-blocking "\$@"
           EOF
           sudo chmod +x /usr/local/bin/google-chrome
 
+          echo "google-chrome resolved to: $(command -v google-chrome)"
           google-chrome --version
+          rm -rf /tmp/temp_chrome_user_data_dir_for_cordova || true
 
       - name: Run Environment Information
         run: |

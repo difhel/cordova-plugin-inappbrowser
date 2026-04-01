@@ -47,21 +47,30 @@ function patchBrowserRunScript (projectRoot) {
     }
 
     const script = fs.readFileSync(runScriptPath, 'utf8');
-    if (script.includes('/__cordova_paramedic_exit')) {
-        return;
-    }
+    let patched = script;
 
     const needle = 'const server = cordovaServe();';
-    if (!script.includes(needle)) {
-        return;
+    if (patched.includes(needle) && !patched.includes('/__cordova_paramedic_exit')) {
+        patched = patched.replace(
+            needle,
+            `${needle}\n\n    // Added by cordova-plugin-inappbrowser-tests: allow cordova-paramedic to shut down\n    // the long-running "cordova run browser" process after Jasmine completes.\n    if (server && server.app) {\n        server.app.get('/__cordova_paramedic_exit', (req, res) => {\n            res.end('ok');\n            try {\n                if (server.server) {\n                    server.server.close(() => process.exit(0));\n                    return;\n                }\n            } catch (e) {}\n            process.exit(0);\n        });\n    }`
+        );
     }
 
-    const patched = script.replace(
-        needle,
-        `${needle}\n\n    // Added by cordova-plugin-inappbrowser-tests: allow cordova-paramedic to shut down\n    // the long-running "cordova run browser" process after Jasmine completes.\n    if (server && server.app) {\n        server.app.get('/__cordova_paramedic_exit', (req, res) => {\n            res.end('ok');\n            try {\n                if (server.server) {\n                    server.server.close(() => process.exit(0));\n                    return;\n                }\n            } catch (e) {}\n            process.exit(0);\n        });\n    }`
-    );
+    const serverPortExpression = '${' + 'server.port}';
+    const localhostUrl = `http://localhost:${serverPortExpression}`;
+    const loopbackUrl = `http://127.0.0.1:${serverPortExpression}`;
 
-    fs.writeFileSync(runScriptPath, patched, 'utf8');
+    if (patched.includes(localhostUrl) && !patched.includes(loopbackUrl)) {
+        patched = patched.replace(
+            localhostUrl,
+            loopbackUrl
+        );
+    }
+
+    if (patched !== script) {
+        fs.writeFileSync(runScriptPath, patched, 'utf8');
+    }
 }
 
 module.exports = function (context) {
