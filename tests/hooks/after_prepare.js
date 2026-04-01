@@ -71,12 +71,13 @@ module.exports = function (context) {
         ...(opts.cordova && Array.isArray(opts.cordova.platforms) ? opts.cordova.platforms : [])
     ];
 
-    if (!platforms.includes('browser')) {
+    const projectRoot = opts.projectRoot;
+    if (!projectRoot) {
         return;
     }
 
-    const projectRoot = opts.projectRoot;
-    if (!projectRoot) {
+    const browserPlatformRoot = path.join(projectRoot, 'platforms', 'browser');
+    if (!platforms.includes('browser') && !fs.existsSync(browserPlatformRoot)) {
         return;
     }
 
