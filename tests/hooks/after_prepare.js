@@ -31,6 +31,15 @@ function copyDir (srcDir, destDir) {
     fs.cpSync(srcDir, destDir, { recursive: true, force: true });
 }
 
+function copyFile (srcPath, destPath) {
+    if (!fs.existsSync(srcPath)) {
+        return;
+    }
+
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    fs.copyFileSync(srcPath, destPath);
+}
+
 function patchBrowserRunScript (projectRoot) {
     const runScriptPath = path.join(projectRoot, 'platforms', 'browser', 'cordova', 'lib', 'run.js');
     if (!fs.existsSync(runScriptPath)) {
@@ -57,7 +66,10 @@ function patchBrowserRunScript (projectRoot) {
 
 module.exports = function (context) {
     const opts = context && context.opts ? context.opts : {};
-    const platforms = Array.isArray(opts.platforms) ? opts.platforms : [];
+    const platforms = [
+        ...(Array.isArray(opts.platforms) ? opts.platforms : []),
+        ...(opts.cordova && Array.isArray(opts.cordova.platforms) ? opts.cordova.platforms : [])
+    ];
 
     if (!platforms.includes('browser')) {
         return;
@@ -73,10 +85,12 @@ module.exports = function (context) {
 
     const testFrameworkAssetsDir = path.join(projectRoot, 'plugins', 'cordova-plugin-test-framework', 'www', 'assets');
     const iabResourcesDir = path.join(projectRoot, 'plugins', 'cordova-plugin-inappbrowser-tests', 'resources');
+    const medicJsonPath = path.join(projectRoot, 'www', 'medic.json');
 
     try {
         copyDir(testFrameworkAssetsDir, cdvtestsDir);
         copyDir(iabResourcesDir, path.join(cdvtestsDir, 'iab-resources'));
+        copyFile(medicJsonPath, path.join(browserWww, 'medic.json'));
         patchBrowserRunScript(projectRoot);
     } catch (err) {
         // Don't fail the whole build if this workaround can't run (e.g. paths don't exist).
